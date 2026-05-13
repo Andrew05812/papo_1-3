@@ -542,7 +542,7 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
             <div class="row">
                 <label>Семестр</label><input id="lab2-semester" type="number" value="1" min="1" max="8" style="max-width:80px"/>
                 <label>Год</label><input id="lab2-year" type="number" value="2025" style="max-width:100px"/>
-                <label>Оборудование</label><input id="lab2-equipment" value="proektor"/>
+                <label>Оборудование</label><input id="lab2-equipment" value="проектор"/>
                 <button class="btn-blue" onclick="runLab2()">Выполнить</button>
             </div>
         </div>
@@ -556,7 +556,7 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
             </div>
             <div class="collapsible" onclick="this.classList.toggle('open')">Показать/скрыть путь запроса и объяснение БД</div>            <div class="coll-body">
                 <div class="auth-flow">
-                    <div class="auth-step st-user"><div class="anum">A</div><div><div class="atxt">Пользователь отправляет запрос с user JWT</div><div class="adet">GET /hours/report?group_name=Gruppa-001 + Bearer token</div></div></div>
+                    <div class="auth-step st-user"><div class="anum">A</div><div><div class="atxt">Пользователь отправляет запрос с user JWT</div><div class="adet">GET /hours/report?group_name=Группа-001 + Bearer token</div></div></div>
                     <div class="auth-step st-gw"><div class="anum">B</div><div><div class="atxt">Gateway проверяет user JWT, создаёт service JWT, mTLS к nginx</div></div></div>
                     <div class="auth-step st-nginx"><div class="anum">C</div><div><div class="atxt">Nginx проверяет client.crt, прокси в Lab3</div></div></div>
                     <div class="auth-step st-lab"><div class="anum">D</div><div><div class="atxt">Lab3 проверяет service JWT, выполняет запрос к 3 БД</div></div></div>
@@ -574,7 +574,7 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
             </div>
             <div class="row">
                 <label>Группа</label>
-                <input id="lab3-group" value="Gruppa-001" style="max-width:200px"/>
+                <input id="lab3-group" value="Группа-001" style="max-width:200px"/>
                 <button class="btn-blue" onclick="runLab3()">Выполнить</button>
             </div>
         </div>
@@ -661,7 +661,7 @@ async function generateData(){
         const r=await api('POST','/generator/generate',{});
         const c=r.counts;
         let html='<div class="gen-counts">';
-        const labels={university:'Университет',institutes:'Институты',departments:'Кафедры',specialities:'Специальности',department_specialities:'Kaf.<->Spec.',lecture_courses:'Курсы',lectures:'Лекции',lecture_materials:'Материалы',student_groups:'Группы',students:'Студенты',schedule:'Расписание',attendance:'Посещения'};
+        const labels={university:'Университет',institutes:'Институты',departments:'Кафедры',specialities:'Специальности',department_specialities:'Каф.<->Спец.',lecture_courses:'Курсы',lectures:'Лекции',lecture_materials:'Материалы',student_groups:'Группы',students:'Студенты',schedule:'Расписание',attendance:'Посещения'};
         for(const[k,v]of Object.entries(c)){
             html+='<div class="gen-count"><div class="val">'+v+'</div><div class="lbl">'+(labels[k]||k)+'</div></div>';
         }
