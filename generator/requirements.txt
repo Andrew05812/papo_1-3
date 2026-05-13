@@ -1,0 +1,7 @@
+psycopg2-binary==2.9.9
+elasticsearch==8.12.1
+neo4j==5.16.0
+redis==5.0.1
+pymongo==4.6.1
+fastapi==0.109.0
+uvicorn==0.27.0
