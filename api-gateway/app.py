@@ -206,7 +206,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Polyglot Persistence - Sistema upravleniya uchebnym processom</title>
+<title>Polyglot Persistence - Система управления учебным процессом</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0b1120;--surface:#131d30;--surface2:#1a2744;--border:#1e3050;--text:#d4dae5;--muted:#6b7fa0;--accent:#3b82f6;--pg:#3b82f6;--es:#ef4444;--neo:#6366f1;--redis:#22c55e;--mongo:#f59e0b}
@@ -355,17 +355,17 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
 <body>
 <div class="container">
     <header>
-        <h1>Polyglot Persistence - Sistema upravleniya uchebnym processom</h1>
+        <h1>Polyglot Persistence - Система управления учебным процессом</h1>
         <div class="subtitle">PostgreSQL &bull; Elasticsearch &bull; Neo4j &bull; Redis &bull; MongoDB &bull; <span class="badge badge-mtls">mTLS</span> &bull; <span class="badge badge-jwt">JWT OAuth2</span></div>
     </header>
 
     <!-- ARCHITECTURE DIAGRAM -->
     <div class="card">
         <div class="card-header">
-            <h2>Arhitektura sistem (diagramma kontejnerov)</h2>
+            <h2>Архитектура системы (диаграмма контейнеров)</h2>
         </div>
         <div class="arch-diagram">
-            <div style="text-align:center;font-size:11px;color:var(--muted);margin-bottom:4px">Polnyj put zaprosa: Polzovatel -> [HTTP+JWT] -> Gateway -> [HTTPS+mTLS] -> Nginx -> [HTTP+service JWT] -> Lab -> DB</div>
+            <div style="text-align:center;font-size:11px;color:var(--muted);margin-bottom:4px">Полный путь запроса: Пользователь → [HTTP+JWT] → Gateway → [HTTPS+mTLS] → Nginx → [HTTP+service JWT] → Lab → DB</div>
             <div class="arch-row">
                 <div class="arch-box gw">Gateway<div class="arch-sub">OAuth2 + mTLS client</div></div>
                 <span class="arch-arrow">&#10145;</span>
@@ -390,33 +390,33 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
     <!-- AUTH SECTION -->
     <div class="card">
         <div class="card-header">
-            <h2>Shag 1: Avtorizaciya OAuth2 (uprowennaya sxema)</h2>
+            <h2>Шаг 1: Авторизация OAuth2 (упрощённая схема)</h2>
         </div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
-            Uprowhennaya sxema OAuth2: polzovatel vvodit login/parol -> server srazu vidaet JWT-token na ruki.
-            V polnoj sxeme token polzovatelu ne vidaetsya, no po TZ razreshena uprowennaya sxema.
-            Token soderzhit: <span class="badge badge-jwt">sub</span> (imya), <span class="badge badge-jwt">type</span> (user/service), <span class="badge badge-jwt">exp</span> (srok dejstviya).
+            Упрощённая схема OAuth2: пользователь вводит логин/парол → сервер сразу выдаёт JWT-токен на руки.
+            В полной схеме токен пользователю не выдаётся, но по ТЗ разрешена упрощённая схема.
+            Токен содержит: <span class="badge badge-jwt">sub</span> (имя), <span class="badge badge-jwt">type</span> (user/service), <span class="badge badge-jwt">exp</span> (срок действия).
         </div>
 
         <div class="auth-flow" id="auth-flow-visual">
             <div class="auth-step st-user">
                 <div class="anum">1</div>
-                <div><div class="atxt">Polzovatel vvodit login/parol -> POST /auth/login</div><div class="adet">grant_type=password, username=admin, password=admin123</div></div>
+                <div><div class="atxt">Пользователь вводит логин/парол → POST /auth/login</div><div class="adet">grant_type=password, username=admin, password=admin123</div></div>
             </div>
             <div class="auth-step st-gw">
                 <div class="anum">2</div>
-                <div><div class="atxt">Gateway proveryaet login/parol, sozdaet JWT (type=user, TTL=24ch)</div><div class="adet">Payload: {"sub":"admin","type":"user","iat":...,"exp":...}</div></div>
+                <div><div class="atxt">Gateway проверяет логин/пароль, создаёт JWT (type=user, TTL=24ч)</div><div class="adet">Payload: {"sub":"admin","type":"user","iat":...,"exp":...}</div></div>
             </div>
             <div class="auth-step st-gw">
                 <div class="anum">3</div>
-                <div><div class="atxt">Gateway vozvrashaet access_token polzovatelu</div><div class="adet">Polzovatel xranit token i otpravlyaet v Authorization: Bearer &lt;token&gt;</div></div>
+                <div><div class="atxt">Gateway возвращает access_token пользователю</div><div class="adet">Пользователь хранит токен и отправляет в Authorization: Bearer &lt;token&gt;</div></div>
             </div>
         </div>
 
         <div class="row">
-            <label>Login</label><input id="login-user" value="admin" style="max-width:160px"/>
-            <label>Parol</label><input id="login-pass" type="password" value="admin123" style="max-width:160px"/>
-            <button class="btn-blue" onclick="doLogin()">Vojti</button>
+            <label>Логин</label><input id="login-user" value="admin" style="max-width:160px"/>
+            <label>Пароль</label><input id="login-pass" type="password" value="admin123" style="max-width:160px"/>
+            <button class="btn-blue" onclick="doLogin()">Войти</button>
             <span id="auth-indicator" style="font-size:11px;color:var(--muted)"></span>
         </div>
         <div id="token-area"></div>
@@ -425,48 +425,48 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
     <!-- mTLS EXPLANATION -->
     <div class="card">
         <div class="card-header">
-            <h2>Shag 2: Vzaimnaya proverka sertifikatov (mTLS)</h2>
+            <h2>Шаг 2: Взаимная проверка сертификатов (mTLS)</h2>
         </div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:6px">
-            Kogda gateway vyzyvaet lab-kontejner, on idet cherez nginx s vzaimnoj proverkoj sertifikatov (mTLS).
-            Nginx proveryaet klientskij sertifikat gateway (client.crt), a gateway proveryaet serversnyj sertifikat nginx (server.crt).
-            Oba sertifikata podpisany edinym Root CA (ca.crt).
+            Когда gateway вызывает лаб-контейнер, он идёт через nginx с взаимной проверкой сертификатов (mTLS).
+            Nginx проверяет клиентский сертификат gateway (client.crt), а gateway проверяет серверный сертификат nginx (server.crt).
+            Оба сертификата подписаны единым Root CA (ca.crt).
         </div>
         <div class="mtls-viz">
             <div class="mtls-side">
-                <div class="box client">Gateway (klient)</div>
+                <div class="box client">Gateway (клиент)</div>
                 <div style="font-size:10px;color:var(--muted)">client.crt + client.key</div>
             </div>
             <div class="mtls-exchange">
-                <div class="mtls-msg to-r">1. ClientHello + client.crt -></div>
-                <div class="mtls-msg to-l"><- 2. ServerHello + server.crt</div>
-                <div class="mtls-msg to-r">3. Proverka server.crt po ca.crt -></div>
-                <div class="mtls-msg to-l"><- 4. Proverka client.crt po ca.crt</div>
-                <div class="mtls-msg ok">5. mTLS-handshake OK! Zashifrovannyj kanal ustanovlen</div>
-                <div class="mtls-msg to-r">6. Service JWT + zapros -> (cherez HTTPS)</div>
-                <div class="mtls-msg to-l"><- 7. Otvet lab-kontejnera</div>
+                <div class="mtls-msg to-r">1. ClientHello + client.crt →</div>
+                <div class="mtls-msg to-l">← 2. ServerHello + server.crt</div>
+                <div class="mtls-msg to-r">3. Проверка server.crt по ca.crt →</div>
+                <div class="mtls-msg to-l">← 4. Проверка client.crt по ca.crt</div>
+                <div class="mtls-msg ok">5. mTLS-handshake OK! Зашифрованный канал установлен</div>
+                <div class="mtls-msg to-r">6. Service JWT + запрос → (через HTTPS)</div>
+                <div class="mtls-msg to-l">← 7. Ответ лаб-контейнера</div>
             </div>
             <div class="mtls-side">
-                <div class="box server">Nginx (server)</div>
+                <div class="box server">Nginx (сервер)</div>
                 <div style="font-size:10px;color:var(--muted)">server.crt + server.key<br>ssl_verify_client on</div>
             </div>
         </div>
         <div style="font-size:11px;color:var(--muted);margin-top:4px">
-            Posle uspeshnogo mTLS: Nginx proxyruet HTTP-zapros v lab-kontejner + peredaet Service JWT v zagolovke Authorization.
-            Lab proveryaet, chto JWT soderzhit type=service (ne user!).
+            После успешного mTLS: Nginx проксирует HTTP-запрос в лаб-контейнер + передаёт Service JWT в заголовке Authorization.
+            Лаб проверяет, что JWT содержит type=service (не user!).
         </div>
     </div>
 
     <!-- GENERATOR -->
     <div class="card">
         <div class="card-header">
-            <h2>Generator dannyx (zapolnyaet vse 5 BD napryamuyu)</h2>
-            <span id="gen-status" class="status-pill pill-empty">proverka...</span>
+            <h2>Генератор данных (заполняет все 5 БД напрямую)</h2>
+            <span id="gen-status" class="status-pill pill-empty">проверка...</span>
         </div>
         <div class="row">
-            <button class="btn-green" onclick="generateData()">Sgenerirovat dannye</button>
-            <button class="btn-red" onclick="clearData()">Ochistit vse xraniliswa</button>
-            <button class="btn-gray" onclick="checkStatus()">Obnovit status</button>
+            <button class="btn-green" onclick="generateData()">Сгенерировать данные</button>
+            <button class="btn-red" onclick="clearData()">Очистить все хранилища</button>
+            <button class="btn-gray" onclick="checkStatus()">Обновить статус</button>
         </div>
         <div id="gen-result" style="display:none"></div>
         <div class="loading-bar" id="gen-loading"><div class="fill"></div></div>
@@ -475,30 +475,29 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
     <!-- LAB QUERIES -->
     <div class="card">
         <div class="card-header">
-            <h2>Shag 3: Laboratornye zaprosy</h2>
+            <h2>Шаг 3: Лабораторные запросы</h2>
         </div>
         <div class="tabs">
-            <div class="tab active" onclick="switchTab('lab1',this)">LR1: Posewaemost</div>
-            <div class="tab" onclick="switchTab('lab2',this)">LR2: Vmestimost</div>
-            <div class="tab" onclick="switchTab('lab3',this)">LR3: CHasy</div>
+            <div class="tab active" onclick="switchTab('lab1',this)">ЛР1: Посещаемость</div>
+            <div class="tab" onclick="switchTab('lab2',this)">ЛР2: Вместимость</div>
+            <div class="tab" onclick="switchTab('lab3',this)">ЛР3: Часы</div>
         </div>
 
         <!-- LAB 1 -->
         <div id="tab-lab1" class="tab-content active">
             <div style="color:var(--muted);font-size:12px;margin-bottom:8px">
-                <b>Zadanie LR1:</b> 10 studentov s minimalnym % poseweniya lekcij, soderzawiix zadannyj termin, za opredelennyj period.
-                <br>Sostav polej: polnaya informaciya o studente, procent poseweniya, period otcheta, termin v zanyatiyx kursa.
+                <b>Задание ЛР1:</b> 10 студентов с минимальным % посещения лекций, содержащих заданный термин, за определённый период.
+                <br>Состав полей: полная информация о студенте, процент посещения, период отчёта, термин в занятиях курса.
             </div>
-            <div class="collapsible" onclick="this.classList.toggle('open')">Pokazat/skryt put zaprosa i obyyasnenie BD</div>
-            <div class="coll-body">
+            <div class="collapsible" onclick="this.classList.toggle('open')">Показать/скрыть путь запроса и объяснение БД</div>            <div class="coll-body">
                 <div class="auth-flow">
-                    <div class="auth-step st-user"><div class="anum">A</div><div><div class="atxt">Polzovatel otpravlyaet zapros s user JWT v zagolovke</div><div class="adet">GET /attendance/low?term=...&start_date=...&end_date=... + Authorization: Bearer &lt;user_jwt&gt;</div></div></div>
-                    <div class="auth-step st-gw"><div class="anum">B</div><div><div class="atxt">Gateway proveryaet user JWT (type=user), sozdaet service JWT (type=service)</div><div class="adet">Dva tipa tokenov: user (24ch) i service (1ch). Lab пропускает только service.</div></div></div>
-                    <div class="auth-step st-nginx"><div class="anum">C</div><div><div class="atxt">Gateway otpravlyaet HTTPS-zapros k nginx s klientskim sertifikatom (mTLS)</div><div class="adet">client.crt podpisan Root CA -> nginx proveryaet ssl_verify_client on -> OK</div></div></div>
-                    <div class="auth-step st-lab"><div class="anum">D</div><div><div class="atxt">Nginx proxyruet v Lab1, lab proveryaet service JWT</div><div class="adet">POST /lab1/query + Authorization: Bearer &lt;service_jwt&gt;</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">1</div><div><div class="atxt"><span class="badge badge-es">Elasticsearch</span> BM25-poisk termina v lekciyax -> spisok lecture_id</div><div class="adet">multi_match: title, annotation, content_text + fuzziness=AUTO + russian_custom analizator</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">2</div><div><div class="atxt"><span class="badge badge-pg">PostgreSQL</span> CTE MATERIALIZED: top-10 studentov s min % poseweniya</div><div class="adet">matching_schedule + group_sched_count + attended -> ORDER BY pct ASC LIMIT 10, partition pruning</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">3</div><div><div class="atxt"><span class="badge badge-redis">Redis</span> Pipeline HGETALL student:{id} dlya top-10 studentov</div><div class="adet">O(1) pipeline, TTL=2ch, popolnenie kewa iz PG pri promaxe</div></div></div>
+                    <div class="auth-step st-user"><div class="anum">A</div><div><div class="atxt">Пользователь отправляет запрос с user JWT в заголовке</div><div class="adet">GET /attendance/low?term=...&start_date=...&end_date=... + Authorization: Bearer &lt;user_jwt&gt;</div></div></div>
+                    <div class="auth-step st-gw"><div class="anum">B</div><div><div class="atxt">Gateway проверяет user JWT (type=user), создаёт service JWT (type=service)</div><div class="adet">Два типа токенов: user (24ч) и service (1ч). Лаб пропускает только service.</div></div></div>
+                    <div class="auth-step st-nginx"><div class="anum">C</div><div><div class="atxt">Gateway отправляет HTTPS-запрос к nginx с клиентским сертификатом (mTLS)</div><div class="adet">client.crt подписан Root CA → nginx проверяет ssl_verify_client on → OK</div></div></div>
+                    <div class="auth-step st-lab"><div class="anum">D</div><div><div class="atxt">Nginx проксирует в Lab1, лаб проверяет service JWT</div><div class="adet">POST /lab1/query + Authorization: Bearer &lt;service_jwt&gt;</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">1</div><div><div class="atxt"><span class="badge badge-es">Elasticsearch</span> BM25-поиск термина в лекциях → список lecture_id</div><div class="adet">multi_match: title, annotation, content_text + fuzziness=AUTO + russian_custom анализатор</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">2</div><div><div class="atxt"><span class="badge badge-pg">PostgreSQL</span> CTE MATERIALIZED: top-10 студентов с мин % посещения</div><div class="adet">matching_schedule + group_sched_count + attended -> ORDER BY pct ASC LIMIT 10, partition pruning</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">3</div><div><div class="atxt"><span class="badge badge-redis">Redis</span> Pipeline HGETALL student:{id} для top-10 студентов</div><div class="adet">O(1) pipeline, TTL=2ч, пополнение кэша из PG при промахе</div></div></div>
                 </div>
             </div>
             <div class="arch-row" style="margin:6px 0">
@@ -508,30 +507,29 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
                 <span class="badge badge-redis">Redis</span>
             </div>
             <div class="row">
-                <label>Termin/fraza</label><input id="lab1-term" value="mikroprocessorov"/>
-                <label>Nachalo</label><input id="lab1-start" value="2025-09-01" style="max-width:140px"/>
-                <label>Konec</label><input id="lab1-end" value="2026-01-31" style="max-width:140px"/>
-                <button class="btn-blue" onclick="runLab1()">Vypolnit</button>
+                <label>Термин/фраза</label><input id="lab1-term" value="mikroprocessorov"/>
+                <label>Начало</label><input id="lab1-start" value="2025-09-01" style="max-width:140px"/>
+                <label>Конец</label><input id="lab1-end" value="2026-01-31" style="max-width:140px"/>
+                <button class="btn-blue" onclick="runLab1()">Выполнить</button>
             </div>
         </div>
 
         <!-- LAB 2 -->
         <div id="tab-lab2" class="tab-content">
             <div style="color:var(--muted);font-size:12px;margin-bottom:8px">
-                <b>Zadanie LR2:</b> Neobxodimyj ob'em auditorii dlya provedeniya zanyatij po kursu zadannogo semestra i goda s trebovaniyami k oborudovaniyu.
-                <br>Sostav polej: polnaya informaciya o kurse, lekcii i kolichestve slushatelej.
+                <b>Задание ЛР2:</b> Необходимый объём аудитории для проведения занятий по курсу заданного семестра и года с требованиями к оборудованию.
+                <br>Состав полей: полная информация о курсе, лекции и количестве слушателей.
             </div>
-            <div class="collapsible" onclick="this.classList.toggle('open')">Pokazat/skryt put zaprosa i obyyasnenie BD</div>
-            <div class="coll-body">
+            <div class="collapsible" onclick="this.classList.toggle('open')">Показать/скрыть путь запроса и объяснение БД</div>            <div class="coll-body">
                 <div class="auth-flow">
-                    <div class="auth-step st-user"><div class="anum">A</div><div><div class="atxt">Polzovatel otpravlyaet zapros s user JWT</div><div class="adet">GET /schedule/capacity?semester=1&year=2025&equipment=... + Bearer token</div></div></div>
-                    <div class="auth-step st-gw"><div class="anum">B</div><div><div class="atxt">Gateway proveryaet user JWT, sozdaet service JWT, mTLS k nginx</div></div></div>
-                    <div class="auth-step st-nginx"><div class="anum">C</div><div><div class="atxt">Nginx proveryaet client.crt, proxy v Lab2</div></div></div>
-                    <div class="auth-step st-lab"><div class="anum">D</div><div><div class="atxt">Lab2 proveryaet service JWT, vypolnyaet zapros k 4 BD</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">1</div><div><div class="atxt"><span class="badge badge-pg">PostgreSQL</span> Filtraciya lekcij po semestru + oborudovanie, schedule po godu, COUNT studentov</div><div class="adet">Batch ANY(%s::uuid[]), composite index (lecture_id, week_start_date)</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">2</div><div><div class="atxt"><span class="badge badge-neo">Neo4j</span> Obxod grafa: Lecture-[BELONGS_TO]->Course, Lecture<-[PART_OF]-Schedule<-[CONTAINS]-Group</div><div class="adet">Suzenie mnozhestva grupp dlya Redis (ne vse studenty, a tolko iz Neo4j)</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">3</div><div><div class="atxt"><span class="badge badge-redis">Redis</span> Pipeline HGETALL student:{id} - tolko dlya grupp iz Neo4j</div><div class="adet">Batch 2000, fallback k PG pri promaxax, zapolnenie kewa</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">4</div><div><div class="atxt"><span class="badge badge-mongo">MongoDB</span> findOne: University->Institutes->Departments->Specialities</div><div class="adet">O(1) chtenie vlozhennogo dokumenta vmesto 4 JOIN v PostgreSQL</div></div></div>
+                    <div class="auth-step st-user"><div class="anum">A</div><div><div class="atxt">Пользователь отправляет запрос с user JWT</div><div class="adet">GET /schedule/capacity?semester=1&year=2025&equipment=... + Bearer token</div></div></div>
+                    <div class="auth-step st-gw"><div class="anum">B</div><div><div class="atxt">Gateway проверяет user JWT, создаёт service JWT, mTLS к nginx</div></div></div>
+                    <div class="auth-step st-nginx"><div class="anum">C</div><div><div class="atxt">Nginx проверяет client.crt, прокси в Lab2</div></div></div>
+                    <div class="auth-step st-lab"><div class="anum">D</div><div><div class="atxt">Lab2 проверяет service JWT, выполняет запрос к 4 БД</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">1</div><div><div class="atxt"><span class="badge badge-pg">PostgreSQL</span> Фильтрация лекций по семестру + оборудование, schedule по году, COUNT студентов</div><div class="adet">Batch ANY(%s::uuid[]), composite index (lecture_id, week_start_date)</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">2</div><div><div class="atxt"><span class="badge badge-neo">Neo4j</span> Обход графа: Lecture-[BELONGS_TO]->Course, Lecture<-[PART_OF]-Schedule<-[CONTAINS]-Group</div><div class="adet">Сужение множества групп для Redis (не все студенты, а только из Neo4j)</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">3</div><div><div class="atxt"><span class="badge badge-redis">Redis</span> Pipeline HGETALL student:{id} - только для групп из Neo4j</div><div class="adet">Batch 2000, fallback к PG при промахах, заполнение кэша</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">4</div><div><div class="atxt"><span class="badge badge-mongo">MongoDB</span> findOne: University->Institutes->Departments->Specialities</div><div class="adet">O(1) чтение вложенного документа вместо 4 JOIN в PostgreSQL</div></div></div>
                 </div>
             </div>
             <div class="arch-row" style="margin:6px 0">
@@ -542,31 +540,30 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
                 <span class="badge badge-mongo">Mongo</span>
             </div>
             <div class="row">
-                <label>Semestr</label><input id="lab2-semester" type="number" value="1" min="1" max="8" style="max-width:80px"/>
-                <label>God</label><input id="lab2-year" type="number" value="2025" style="max-width:100px"/>
-                <label>Oborudovanie</label><input id="lab2-equipment" value="proektor"/>
-                <button class="btn-blue" onclick="runLab2()">Vypolnit</button>
+                <label>Семестр</label><input id="lab2-semester" type="number" value="1" min="1" max="8" style="max-width:80px"/>
+                <label>Год</label><input id="lab2-year" type="number" value="2025" style="max-width:100px"/>
+                <label>Оборудование</label><input id="lab2-equipment" value="proektor"/>
+                <button class="btn-blue" onclick="runLab2()">Выполнить</button>
             </div>
         </div>
 
         <!-- LAB 3 -->
         <div id="tab-lab3" class="tab-content">
             <div style="color:var(--muted);font-size:12px;margin-bottom:8px">
-                <b>Zadanie LR3:</b> Otchet po zadannoj groupe s ukazaniem ob"ema proslushannyx i zaplanirovannyx chasov lekcij.
-                1 lekciya = 2 akademicheskix chasa. V otchet popadayut tolko lekcii so spec. tegom discipliny kafedry.
-                <br>Sostav polej: polnaya informaciya o gruppe, studente, kurse, zaplanirovannyx i posewyonnyx chasax.
+                <b>Задание ЛР3:</b> Отчёт по заданной группе с указанием объёма прослушанных и запланированных часов лекций.
+                1 лекция = 2 академических часа. В отчёт попадают только лекции со спец. тегом дисциплины кафедры.
+                <br>Состав полей: полная информация о группе, студенте, курсе, запланированных и посещённых часах.
             </div>
-            <div class="collapsible" onclick="this.classList.toggle('open')">Pokazat/skryt put zaprosa i obyyasnenie BD</div>
-            <div class="coll-body">
+            <div class="collapsible" onclick="this.classList.toggle('open')">Показать/скрыть путь запроса и объяснение БД</div>            <div class="coll-body">
                 <div class="auth-flow">
-                    <div class="auth-step st-user"><div class="anum">A</div><div><div class="atxt">Polzovatel otpravlyaet zapros s user JWT</div><div class="adet">GET /hours/report?group_name=Gruppa-001 + Bearer token</div></div></div>
-                    <div class="auth-step st-gw"><div class="anum">B</div><div><div class="atxt">Gateway proveryaet user JWT, sozdaet service JWT, mTLS k nginx</div></div></div>
-                    <div class="auth-step st-nginx"><div class="anum">C</div><div><div class="atxt">Nginx proveryaet client.crt, proxy v Lab3</div></div></div>
-                    <div class="auth-step st-lab"><div class="anum">D</div><div><div class="atxt">Lab3 proveryaet service JWT, vypolnyaet zapros k 3 BD</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">0</div><div><div class="atxt"><span class="badge badge-pg">PostgreSQL</span> Lookup group_id po group_name (polzovatel vvodit nazvanie, ne UUID)</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">1</div><div><div class="atxt"><span class="badge badge-es">Elasticsearch</span> Filtraciya po tegam spec. disciplin (terms query: specdisciplina i t.d.)</div><div class="adet">Tolko lekcii so spec. tegami popadayut v otchet, lecture_type=lekcii</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">2</div><div><div class="atxt"><span class="badge badge-neo">Neo4j</span> Obxod grafa: Student-[MEMBER_OF]->Group-[CONTAINS]->Schedule-[PART_OF]->Lecture-[BELONGS_TO]->Course</div><div class="adet">1 startovaya noda Group, O(E) po indeksu</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">3</div><div><div class="atxt"><span class="badge badge-pg">PostgreSQL</span> Batch attendance + lecture_hours + student details</div><div class="adet">attended_hours = attended_count * 2 (1 lekciya = 2 ak.ch.), ANY(%s::uuid[]) batch</div></div></div>
+                    <div class="auth-step st-user"><div class="anum">A</div><div><div class="atxt">Пользователь отправляет запрос с user JWT</div><div class="adet">GET /hours/report?group_name=Gruppa-001 + Bearer token</div></div></div>
+                    <div class="auth-step st-gw"><div class="anum">B</div><div><div class="atxt">Gateway проверяет user JWT, создаёт service JWT, mTLS к nginx</div></div></div>
+                    <div class="auth-step st-nginx"><div class="anum">C</div><div><div class="atxt">Nginx проверяет client.crt, прокси в Lab3</div></div></div>
+                    <div class="auth-step st-lab"><div class="anum">D</div><div><div class="atxt">Lab3 проверяет service JWT, выполняет запрос к 3 БД</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">0</div><div><div class="atxt"><span class="badge badge-pg">PostgreSQL</span> Lookup group_id по group_name (пользователь вводит название, не UUID)</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">1</div><div><div class="atxt"><span class="badge badge-es">Elasticsearch</span> Фильтрация по тегам спец. дисциплин (terms query: specdisciplina и т.д.)</div><div class="adet">Только лекции со спец. тегами попадают в отчёт, lecture_type=лекции</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">2</div><div><div class="atxt"><span class="badge badge-neo">Neo4j</span> Обход графа: Student-[MEMBER_OF]->Group-[CONTAINS]->Schedule-[PART_OF]->Lecture-[BELONGS_TO]->Course</div><div class="adet">1 стартовая нода Group, O(E) по индексу</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">3</div><div><div class="atxt"><span class="badge badge-pg">PostgreSQL</span> Batch attendance + lecture_hours + student details</div><div class="adet">attended_hours = attended_count * 2 (1 лекция = 2 ак.ч.), ANY(%s::uuid[]) batch</div></div></div>
                 </div>
             </div>
             <div class="arch-row" style="margin:6px 0">
@@ -576,9 +573,9 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
                 <span class="badge badge-pg">PG</span>
             </div>
             <div class="row">
-                <label>Gruppa</label>
+                <label>Группа</label>
                 <input id="lab3-group" value="Gruppa-001" style="max-width:200px"/>
-                <button class="btn-blue" onclick="runLab3()">Vypolnit</button>
+                <button class="btn-blue" onclick="runLab3()">Выполнить</button>
             </div>
         </div>
 
@@ -617,7 +614,7 @@ async function doLogin(){
         const p=document.getElementById('login-pass').value;
 
         const indicator=document.getElementById('auth-indicator');
-        indicator.innerHTML='<span style="color:#fbbf24">... Ozhidanie</span>';
+        indicator.innerHTML='<span style="color:#fbbf24">... Ожидание</span>';
 
         const r=await api('POST','/auth/login',{username:u,password:p});
         TOKEN=r.access_token;
@@ -628,21 +625,21 @@ async function doLogin(){
             const header=JSON.parse(b64decode(parts[0]));
             const payload=JSON.parse(b64decode(parts[1]));
             payloadStr=JSON.stringify(payload,null,2);
-        }catch(e){payloadStr='(ne udalos dekodirovat)'}
+        }catch(e){payloadStr='(не удалось декодировать)'}
 
         document.getElementById('token-area').innerHTML=
-            '<div class="jwt-label">Poluchennyj JWT-token (soxranyajte v Authorization: Bearer):</div>'+
+            '<div class="jwt-label">Полученный JWT-токен (сохраняйте в Authorization: Bearer):</div>'+
             '<div class="jwt-box">'+TOKEN.substring(0,80)+'...</div>'+
-            '<div class="jwt-label" style="margin-top:6px">Dekodirovannyj payload (soderzhimoe tokena):</div>'+
+            '<div class="jwt-label" style="margin-top:6px">Декодированный payload (содержимое токена):</div>'+
             '<div class="jwt-box">'+payloadStr+'</div>'+
             '<div class="auth-flow" style="margin-top:8px">'+
-            '<div class="auth-step st-gw"><div class="anum">4</div><div><div class="atxt">Teper pri kajdom zaprose gateway: proveryaet user JWT -> sozdaet service JWT (type=service, TTL=1ch)</div><div class="adet">Service JWT otpravlyaetsya v nginx, ne polzovatelu</div></div></div>'+
-            '<div class="auth-step st-nginx"><div class="anum">5</div><div><div class="atxt">Gateway otpravlyaet HTTPS-zapros s client.crt (mTLS) + service JWT v zagolovke</div><div class="adet">Vzaimnaya proverka: nginx proveryaet client.crt, gateway proveryaet server.crt</div></div></div>'+
+            '<div class="auth-step st-gw"><div class="anum">4</div><div><div class="atxt">Теперь при каждом запросе gateway: проверяет user JWT → создаёт service JWT (type=service, TTL=1ч)</div><div class="adet">Service JWT отправляется в nginx, не пользователю</div></div></div>'+
+            '<div class="auth-step st-nginx"><div class="anum">5</div><div><div class="atxt">Gateway отправляет HTTPS-запрос с client.crt (mTLS) + service JWT в заголовке</div><div class="adet">Взаимная проверка: nginx проверяет client.crt, gateway проверяет server.crt</div></div></div>'+
             '</div>';
 
-        indicator.innerHTML='<span style="color:#4ade80">&#10003; OAuth2 password grant ('+u+'), TTL 24ch</span>';
+        indicator.innerHTML='<span style="color:#4ade80">&#10003; OAuth2 password grant ('+u+'), TTL 24ч</span>';
     }catch(e){
-        document.getElementById('auth-indicator').innerHTML='<span style="color:#fca5a5">&#10060; Owibka: '+e.message+'</span>';
+        document.getElementById('auth-indicator').innerHTML='<span style="color:#fca5a5">&#10060; Ошибка: '+e.message+'</span>';
     }
 }
 
@@ -650,40 +647,40 @@ async function checkStatus(){
     try{
         const r=await api('GET','/generator/status');
         const el=document.getElementById('gen-status');
-        if(r.status==='ready'){el.textContent='gotov ('+r.students+' studentov, '+r.courses+' kursov)';el.className='status-pill pill-ok'}
-        else if(r.status==='empty'){el.textContent='pusto - sgenerirujte dannye';el.className='status-pill pill-empty'}
+        if(r.status==='ready'){el.textContent='готов ('+r.students+' студентов, '+r.courses+' курсов)';el.className='status-pill pill-ok'}
+        else if(r.status==='empty'){el.textContent='пусто - сгенерируйте данные';el.className='status-pill pill-empty'}
         else{el.textContent=r.status;el.className='status-pill pill-err'}
-    }catch(e){document.getElementById('gen-status').textContent='owibka';document.getElementById('gen-status').className='status-pill pill-err'}
+    }catch(e){document.getElementById('gen-status').textContent='ошибка';document.getElementById('gen-status').className='status-pill pill-err'}
 }
 
 async function generateData(){
-    if(!TOKEN){alert('Snachala avtorizujtes');return}
+    if(!TOKEN){alert('Сначала авторизуйтесь');return}
     const bar=document.getElementById('gen-loading');bar.classList.add('active');
     const res=document.getElementById('gen-result');res.style.display='none';
     try{
         const r=await api('POST','/generator/generate',{});
         const c=r.counts;
         let html='<div class="gen-counts">';
-        const labels={university:'Universitet',institutes:'Instituty',departments:'Kafedry',specialities:'Specialnosti',department_specialities:'Kaf.<->Spec.',lecture_courses:'Kursy',lectures:'Lekcii',lecture_materials:'Materialy',student_groups:'Gruppy',students:'Studenty',schedule:'Raspisanie',attendance:'Poseweniya'};
+        const labels={university:'Университет',institutes:'Институты',departments:'Кафедры',specialities:'Специальности',department_specialities:'Kaf.<->Spec.',lecture_courses:'Курсы',lectures:'Лекции',lecture_materials:'Материалы',student_groups:'Группы',students:'Студенты',schedule:'Расписание',attendance:'Посещения'};
         for(const[k,v]of Object.entries(c)){
             html+='<div class="gen-count"><div class="val">'+v+'</div><div class="lbl">'+(labels[k]||k)+'</div></div>';
         }
         html+='</div>';
         res.innerHTML=html;res.style.display='block';
         checkStatus();
-    }catch(e){res.innerHTML='<div style="color:#fca5a5">Owibka: '+e.message+'</div>';res.style.display='block'}
+    }catch(e){res.innerHTML='<div style="color:#fca5a5">Ошибка: '+e.message+'</div>';res.style.display='block'}
     finally{bar.classList.remove('active')}
 }
 
 async function clearData(){
-    if(!TOKEN){alert('Snachala avtorizujtes');return}
-    if(!confirm('Ochistit VSE dannye iz vsex 5 xranilish?'))return;
+    if(!TOKEN){alert('Сначала авторизуйтесь');return}
+    if(!confirm('Очистить ВСЕ данные из всех 5 хранилищ?'))return;
     try{
         await api('DELETE','/generator/clear');
         document.getElementById('gen-result').style.display='none';
         document.getElementById('result-area').innerHTML='';
         checkStatus();
-    }catch(e){alert('Owibka: '+e.message)}
+    }catch(e){alert('Ошибка: '+e.message)}
 }
 
 function renderSteps(steps){
@@ -709,13 +706,13 @@ function pctBar(pct){
 function renderLab1(data){
     let html='';
     html+='<div class="meta-row">';
-    html+='<div class="meta-item"><span class="meta-label">Put:</span><span class="badge badge-mtls">mTLS</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-es">ES</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-pg">PG</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-redis">Redis</span></div>';
-    html+='<div class="meta-item"><span class="meta-label">Vremya:</span><span class="meta-val">'+data.execution_time_sec+'s</span></div>';
-    html+='<div class="meta-item"><span class="meta-label">Rezultatov:</span><span class="meta-val">'+data.result.length+'</span></div>';
+    html+='<div class="meta-item"><span class="meta-label">Путь:</span><span class="badge badge-mtls">mTLS</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-es">ES</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-pg">PG</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-redis">Redis</span></div>';
+    html+='<div class="meta-item"><span class="meta-label">Время:</span><span class="meta-val">'+data.execution_time_sec+'s</span></div>';
+    html+='<div class="meta-item"><span class="meta-label">Результатов:</span><span class="meta-val">'+data.result.length+'</span></div>';
     html+='</div>';
     html+=renderSteps(data.steps);
     if(data.result.length){
-        html+='<table class="result-table"><thead><tr><th>#</th><th>FIO studenta</th><th>Email</th><th>Nomer bileta</th><th>Gruppa</th><th>Pos.</th><th>Iz</th><th>%</th><th>Kurs</th><th>Termin</th><th>Period</th></tr></thead><tbody>';
+        html+='<table class="result-table"><thead><tr><th>#</th><th>ФИО студента</th><th>Email</th><th>Номер билета</th><th>Группа</th><th>Пос.</th><th>Из</th><th>%</th><th>Курс</th><th>Термин</th><th>Период</th></tr></thead><tbody>';
         data.result.forEach((r,i)=>{
             const s=r.student;
             const pct=r.attendance_pct;
@@ -733,7 +730,7 @@ function renderLab1(data){
         });
         html+='</tbody></table>';
     }
-    html+='<span class="raw-toggle" onclick="toggleRaw()">Pokazat/skryt raw JSON</span>';
+    html+='<span class="raw-toggle" onclick="toggleRaw()">Показать/скрыть raw JSON</span>';
     html+='<pre class="raw-json" id="raw-json"></pre>';
     return html
 }
@@ -741,17 +738,17 @@ function renderLab1(data){
 function renderLab2(data){
     let html='';
     html+='<div class="meta-row">';
-    html+='<div class="meta-item"><span class="meta-label">Put:</span><span class="badge badge-mtls">mTLS</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-pg">PG</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-neo">Neo4j</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-redis">Redis</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-mongo">Mongo</span></div>';
-    html+='<div class="meta-item"><span class="meta-label">Vremya:</span><span class="meta-val">'+data.execution_time_sec+'s</span></div>';
+    html+='<div class="meta-item"><span class="meta-label">Путь:</span><span class="badge badge-mtls">mTLS</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-pg">PG</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-neo">Neo4j</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-redis">Redis</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-mongo">Mongo</span></div>';
+    html+='<div class="meta-item"><span class="meta-label">Время:</span><span class="meta-val">'+data.execution_time_sec+'s</span></div>';
     html+='</div>';
     html+=renderSteps(data.steps);
     data.result.forEach(r=>{
         html+='<div class="course-card">';
-        html+='<h4>'+r.course.name+' (semestr '+r.course.semester+')</h4>';
+        html+='<h4>'+r.course.name+' (семестр '+r.course.semester+')</h4>';
         html+='<div class="meta-row" style="font-size:11px">';
-        html+='<div class="meta-item"><span class="meta-label">CHasy:</span><span class="meta-val">'+r.course.total_hours+' ('+r.course.lecture_hours+'l/'+r.course.practice_hours+'pr/'+r.course.lab_hours+'lab)</span></div>';
-        html+='<div class="meta-item"><span class="meta-label">Slushatelej:</span><span class="meta-val" style="color:#fbbf24">'+r.total_listeners+'</span></div>';
-        html+='<div class="meta-item"><span class="meta-label">Vmestimost:</span><span class="meta-val" style="color:#fbbf24">'+r.required_classroom_capacity+'</span></div>';
+        html+='<div class="meta-item"><span class="meta-label">Часы:</span><span class="meta-val">'+r.course.total_hours+' ('+r.course.lecture_hours+'л/'+r.course.practice_hours+'пр/'+r.course.lab_hours+'лаб)</span></div>';
+        html+='<div class="meta-item"><span class="meta-label">Слушателей:</span><span class="meta-val" style="color:#fbbf24">'+r.total_listeners+'</span></div>';
+        html+='<div class="meta-item"><span class="meta-label">Вместимость:</span><span class="meta-val" style="color:#fbbf24">'+r.required_classroom_capacity+'</span></div>';
         html+='</div>';
         if(r.hierarchy&&r.hierarchy.university){
             html+='<div class="hierarchy-chain">';
@@ -762,7 +759,7 @@ function renderLab2(data){
             html+='</div>';
         }
         if(r.lectures&&r.lectures.length){
-            html+='<table class="result-table"><thead><tr><th>Lekciya</th><th>Tip</th><th>Oborudovanie</th><th>Auditoriya</th><th>Data</th><th>Vremya</th><th>Prepodavatel</th><th>Slushatelej</th></tr></thead><tbody>';
+            html+='<table class="result-table"><thead><tr><th>Лекция</th><th>Тип</th><th>Оборудование</th><th>Аудитория</th><th>Дата</th><th>Время</th><th>Преподаватель</th><th>Слушателей</th></tr></thead><tbody>';
             r.lectures.forEach(l=>{
                 html+='<tr><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">'+l.title+'</td>';
                 html+='<td>'+l.type+'</td><td>'+l.equipment_req+'</td>';
@@ -772,13 +769,13 @@ function renderLab2(data){
             html+='</tbody></table>';
         }
         if(r.groups&&r.groups.length){
-            html+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Gruppy: ';
+            html+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Группы: ';
             r.groups.forEach(g=>{html+='<span class="badge badge-redis" style="font-size:9px;margin:2px">'+g.name+' ('+g.student_count+')</span> '});
             html+='</div>';
         }
         html+='</div>';
     });
-    html+='<span class="raw-toggle" onclick="toggleRaw()">Pokazat/skryt raw JSON</span>';
+    html+='<span class="raw-toggle" onclick="toggleRaw()">Показать/скрыть raw JSON</span>';
     html+='<pre class="raw-json" id="raw-json"></pre>';
     return html
 }
@@ -786,14 +783,14 @@ function renderLab2(data){
 function renderLab3(data){
     let html='';
     html+='<div class="meta-row">';
-    html+='<div class="meta-item"><span class="meta-label">Put:</span><span class="badge badge-mtls">mTLS</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-es">ES</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-neo">Neo4j</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-pg">PG</span></div>';
-    html+='<div class="meta-item"><span class="meta-label">Vremya:</span><span class="meta-val">'+data.execution_time_sec+'s</span></div>';
-    html+='<div class="meta-item"><span class="meta-label">1 lekciya =</span><span class="meta-val">'+data.hours_per_lecture+' ak.ch.</span></div>';
+    html+='<div class="meta-item"><span class="meta-label">Путь:</span><span class="badge badge-mtls">mTLS</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-es">ES</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-neo">Neo4j</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-pg">PG</span></div>';
+    html+='<div class="meta-item"><span class="meta-label">Время:</span><span class="meta-val">'+data.execution_time_sec+'s</span></div>';
+    html+='<div class="meta-item"><span class="meta-label">1 лекция =</span><span class="meta-val">'+data.hours_per_lecture+' ак.ч.</span></div>';
     html+='</div>';
     if(data.group){
-        html+='<div class="meta-row"><div class="meta-item"><span class="meta-label">Gruppa:</span><span class="meta-val">'+data.group.name+'</span></div>';
-        html+='<div class="meta-item"><span class="meta-label">God postupleniya:</span><span class="meta-val">'+data.group.enrollment_year+'</span></div>';
-        html+='<div class="meta-item"><span class="meta-label">Studentov:</span><span class="meta-val">'+data.students.length+'</span></div></div>';
+        html+='<div class="meta-row"><div class="meta-item"><span class="meta-label">Группа:</span><span class="meta-val">'+data.group.name+'</span></div>';
+        html+='<div class="meta-item"><span class="meta-label">Год поступления:</span><span class="meta-val">'+data.group.enrollment_year+'</span></div>';
+        html+='<div class="meta-item"><span class="meta-label">Студентов:</span><span class="meta-val">'+data.students.length+'</span></div></div>';
     }
     if(data.hierarchy&&data.hierarchy.institute){
         html+='<div class="hierarchy-chain">';
@@ -803,7 +800,7 @@ function renderLab3(data){
     }
     html+=renderSteps(data.steps);
     if(data.students&&data.students.length){
-        html+='<table class="result-table"><thead><tr><th>Student</th><th>Kurs</th><th>Sem.</th><th>Tegi</th><th>Zapl. chasov</th><th>Posew. lekcij</th><th>Posew. chasov</th><th>%</th></tr></thead><tbody>';
+        html+='<table class="result-table"><thead><tr><th>Студент</th><th>Курс</th><th>Сем.</th><th>Теги</th><th>Запл. часов</th><th>Посещ. лекций</th><th>Посещ. часов</th><th>%</th></tr></thead><tbody>';
         data.students.forEach(s=>{
             const numCourses=s.courses.length;
             const totalPct=s.total_planned_hours>0?((s.total_attended_hours/s.total_planned_hours)*100):0;
@@ -811,7 +808,7 @@ function renderLab3(data){
                 const pct=c.planned_hours>0?((c.attended_hours/c.planned_hours)*100):0;
                 if(ci===0){
                     html+='<tr>';
-                    html+='<td rowspan="'+numCourses+'" style="font-weight:600;vertical-align:top;border-right:1px solid var(--border)">'+s.student_name+'<div style="font-size:10px;color:#fbbf24;margin-top:3px">Itogo: '+s.total_attended_hours+'/'+s.total_planned_hours+' ak.ch. ('+totalPct.toFixed(1)+'%)'+pctBar(totalPct)+'</div></td>';
+                    html+='<td rowspan="'+numCourses+'" style="font-weight:600;vertical-align:top;border-right:1px solid var(--border)">'+s.student_name+'<div style="font-size:10px;color:#fbbf24;margin-top:3px">Итого: '+s.total_attended_hours+'/'+s.total_planned_hours+' ак.ч. ('+totalPct.toFixed(1)+'%)'+pctBar(totalPct)+'</div></td>';
                 }
                 html+='<td>'+c.course_name+'</td><td>'+c.semester+'</td>';
                 html+='<td>'+(c.special_tags||[]).map(t=>'<span class="badge badge-es" style="font-size:8px">'+t+'</span>').join(' ')+'</td>';
@@ -822,7 +819,7 @@ function renderLab3(data){
         });
         html+='</tbody></table>';
     }
-    html+='<span class="raw-toggle" onclick="toggleRaw()">Pokazat/skryt raw JSON</span>';
+    html+='<span class="raw-toggle" onclick="toggleRaw()">Показать/скрыть raw JSON</span>';
     html+='<pre class="raw-json" id="raw-json"></pre>';
     return html
 }
@@ -833,7 +830,7 @@ function toggleRaw(){
 }
 
 async function runLab1(){
-    if(!TOKEN){alert('Snachala avtorizujtes');return}
+    if(!TOKEN){alert('Сначала авторизуйтесь');return}
     const term=document.getElementById('lab1-term').value;
     const start=document.getElementById('lab1-start').value;
     const end=document.getElementById('lab1-end').value;
@@ -843,12 +840,12 @@ async function runLab1(){
         const r=await api('GET','/attendance/low?term='+encodeURIComponent(term)+'&start_date='+start+'&end_date='+end);
         lastRawData=r;
         document.getElementById('result-area').innerHTML=renderLab1(r);
-    }catch(e){document.getElementById('result-area').innerHTML='<div style="color:#fca5a5;padding:8px">&#10060; Owibka: '+e.message+'</div>'}
+    }catch(e){document.getElementById('result-area').innerHTML='<div style="color:#fca5a5;padding:8px">&#10060; Ошибка: '+e.message+'</div>'}
     finally{bar.classList.remove('active')}
 }
 
 async function runLab2(){
-    if(!TOKEN){alert('Snachala avtorizujtes');return}
+    if(!TOKEN){alert('Сначала авторизуйтесь');return}
     const sem=document.getElementById('lab2-semester').value;
     const yr=document.getElementById('lab2-year').value;
     const eq=document.getElementById('lab2-equipment').value;
@@ -858,21 +855,21 @@ async function runLab2(){
         const r=await api('GET','/schedule/capacity?semester='+sem+'&year='+yr+'&equipment='+encodeURIComponent(eq));
         lastRawData=r;
         document.getElementById('result-area').innerHTML=renderLab2(r);
-    }catch(e){document.getElementById('result-area').innerHTML='<div style="color:#fca5a5;padding:8px">&#10060; Owibka: '+e.message+'</div>'}
+    }catch(e){document.getElementById('result-area').innerHTML='<div style="color:#fca5a5;padding:8px">&#10060; Ошибка: '+e.message+'</div>'}
     finally{bar.classList.remove('active')}
 }
 
 async function runLab3(){
-    if(!TOKEN){alert('Snachala avtorizujtes');return}
+    if(!TOKEN){alert('Сначала авторизуйтесь');return}
     const gname=document.getElementById('lab3-group').value;
-    if(!gname){alert('Vvedite nazvanie gruppy');return}
+    if(!gname){alert('Введите название группы');return}
     const bar=document.getElementById('query-loading');bar.classList.add('active');
     document.getElementById('result-area').innerHTML='<div style="color:#60a5fa;padding:8px;font-size:12px">Gateway <span class="badge badge-mtls">mTLS</span> &#10145; nginx &#10145; <span class="badge badge-es">ES</span> &#10145; <span class="badge badge-neo">Neo4j</span> &#10145; <span class="badge badge-pg">PG</span> ...</div>';
     try{
         const r=await api('GET','/hours/report?group_name='+encodeURIComponent(gname));
         lastRawData=r;
         document.getElementById('result-area').innerHTML=renderLab3(r);
-    }catch(e){document.getElementById('result-area').innerHTML='<div style="color:#fca5a5;padding:8px">&#10060; Owibka: '+e.message+'</div>'}
+    }catch(e){document.getElementById('result-area').innerHTML='<div style="color:#fca5a5;padding:8px">&#10060; Ошибка: '+e.message+'</div>'}
     finally{bar.classList.remove('active')}
 }
 
