@@ -9,19 +9,33 @@
   • Redis     — кэш студентов в Hash-ключах student:{uuid} с TTL=2 ч (7200 с)
   • MongoDB   — вложенный документ иерархии University→Institutes→Departments→Specialities
 """
+# psycopg2: драйвер PostgreSQL — master-источник всех сущностей (12 таблиц + partitioned attendance)
 import psycopg2
+# execute_values: batch-вставка строк (по 500) вместо отдельных INSERT — в 10-100 раз быстрее
 from psycopg2.extras import execute_values
+# Elasticsearch + helpers: полнотекстовый индекс lectures (BM25, russian_custom анализатор, bulk-индексация)
 from elasticsearch import Elasticsearch, helpers
+# Neo4j GraphDatabase: граф связей студент↔группа↔расписание↔лекция↔курс (5 узлов, 6 связей)
 from neo4j import GraphDatabase
+# redis: кэш данных студентов (Hash student:{uuid}, TTL=7200с, pipeline-вставка)
 import redis
+# pymongo: MongoClient для вложенного документа иерархии университета (findOne O(1))
 from pymongo import MongoClient
+# bson.ObjectId: работа с MongoDB _id (в текущей генерации используется str(university_id))
 from bson import ObjectId
+# uuid: генерация UUID v4 для всех первичных ключей (совместимость с PostgreSQL UUID-типом)
 import uuid
+# random: стохастическая генерация данных (посещаемость 50-95%, теги 30%, оборудование 40%)
 import random
+# hashlib: зарезервировано для хеширования (в текущей версии не используется)
 import hashlib
+# date, time, datetime, timedelta: работа с датами расписания и посещаемости
 from datetime import date, time, datetime, timedelta
+# Optional: аннотации типов для функций (в текущей версии не используется активно)
 from typing import Optional
+# logging: протоколирование процесса генерации (INFO-уровень)
 import logging
+# os: чтение переменных окружения для конфигурации подключений к 5 БД
 import os
 
 logging.basicConfig(level=logging.INFO)
