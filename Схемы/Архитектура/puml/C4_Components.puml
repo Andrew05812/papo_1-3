@@ -1,4 +1,3 @@
-```plantuml
 @startuml C4_Components
 !include <C4/C4_Component>
 
@@ -22,7 +21,7 @@ System_Boundary(nginx_container, "Контейнер: Nginx") {
 System_Boundary(lab1_container, "Контейнер: Lab1") {
     Component(lab1_auth, "Token Verifier", "JWT", "Проверяет type=service в токене")
     Component(lab1_es, "ES Search", "elasticsearch-py", "BM25 полнотекстовый поиск по лекциям (russian_custom)")
-    Component(lab1_neo, "Neo4j Traversal", "neo4j-driver", "SHOULD_ATTEND + ATTENDED → attendance_pct top-10")
+    Component(lab1_pg, "PG CTE Query", "psycopg2", "CTE MATERIALIZED top-10 студентов по посещаемости")
     Component(lab1_redis, "Redis Cache", "redis-py", "Pipeline HGETALL student:{id} (cache-aside, TTL=2ч)")
 }
 
@@ -44,7 +43,7 @@ System_Boundary(lab3_container, "Контейнер: Lab3") {
 System_Boundary(gen_container, "Контейнер: Generator") {
     Component(gen_pg, "PG Writer", "psycopg2", "INSERT во все 12 таблиц, включая partitioned attendance")
     Component(gen_es, "ES Indexer", "elasticsearch-py", "Создаёт индекс lectures, bulk insert")
-    Component(gen_neo, "Neo4j Builder", "neo4j-driver", "5 типов узлов, 6 типов связей (MEMBER_OF, CONTAINS, PART_OF, BELONGS_TO, SHOULD_ATTEND, ATTENDED)")
+    Component(gen_neo, "Neo4j Builder", "neo4j-driver", "5 типов узлов, 5 типов связей (UNWIND batch)")
     Component(gen_redis, "Redis Writer", "redis-py", "Pipeline HSET student:{id} (TTL=2ч)")
     Component(gen_mongo, "MongoDB Builder", "pymongo", "Вложенный документ University→Institutes→Departments")
 }
@@ -61,8 +60,8 @@ Rel(router, lab2_auth, "/lab2/")
 Rel(router, lab3_auth, "/lab3/")
 
 Rel(lab1_auth, lab1_es, "term")
-Rel(lab1_es, lab1_neo, "lecture_ids")
-Rel(lab1_neo, lab1_redis, "student_ids")
+Rel(lab1_es, lab1_pg, "lecture_ids")
+Rel(lab1_pg, lab1_redis, "student_ids")
 
 Rel(lab2_auth, lab2_pg, "semester, year")
 Rel(lab2_pg, lab2_neo, "lecture_ids")
@@ -79,4 +78,3 @@ Rel(gen_pg, gen_redis, "student data")
 Rel(gen_pg, gen_mongo, "hierarchy data")
 
 @enduml
-```

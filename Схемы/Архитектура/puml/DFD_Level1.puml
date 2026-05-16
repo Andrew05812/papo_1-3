@@ -1,4 +1,3 @@
-```plantuml
 @startuml DFD_Level1
 skinparam rectangle {
     BorderColor #000000
@@ -24,7 +23,7 @@ rectangle "Пользователь" as User
 rectangle "1.0\nАутентификация\nOAuth2 (JWT)" as Auth
 rectangle "2.0\nПроверка mTLS\nи проксирование\n(nginx)" as Proxy
 
-rectangle "3.1\nЛР1: Посещаемость\nпо термину\n(ES→Neo4j→Redis)" as Report1
+rectangle "3.1\nЛР1: Посещаемость\nпо термину\n(ES→PG→Redis)" as Report1
 rectangle "3.2\nЛР2: Нагрузка аудиторий\nпо семестру/году\n(PG→Neo4j→Redis→Mongo)" as Report2
 rectangle "3.3\nЛР3: Часы спец. дисциплин\nпо группе\n(ES→Neo4j→PG)" as Report3
 
@@ -42,8 +41,8 @@ Proxy -down-> Report3 : group_name
 
 Report1 -down-> ES : полнотекстовый поиск
 ES -up-> Report1 : lecture_ids
-Report1 -down-> Neo4j : SHOULD_ATTEND + ATTENDED → attendance_pct
-Neo4j -up-> Report1 : top-10 студентов
+Report1 -down-> PG : CTE top-10 attendance
+PG -up-> Report1 : student rows
 Report1 -down-> Redis : HGETALL pipeline
 Redis -up-> Report1 : student cache
 
@@ -69,4 +68,3 @@ Report3 -up-> Proxy : JSON
 Proxy -left-> Auth : JSON
 Auth -left-> User : JSON-отчёт
 @enduml
-```

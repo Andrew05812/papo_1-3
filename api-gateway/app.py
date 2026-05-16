@@ -1,17 +1,22 @@
 """
-API Gateway - klient container
+API Gateway - клиентский контейнер
 
-Role: single entry point for user.
-1. User authenticates via OAuth2 (simplified scheme - token issued directly)
-2. To call lab services, the gateway:
-   a) verifies user JWT
-   b) creates service JWT (type=service) for authorization inside labs
-   c) sends HTTPS request to nginx with client certificate (mTLS)
-3. Nginx verifies client cert and proxies request to lab container
-4. Lab service verifies service JWT and executes query to its DBs
+Роль: единая точка входа для пользователя.
+1. Пользователь авторизуется через OAuth2 (упрощённая схема — токен выдаётся напрямую)
+2. Для вызова лаб-сервисов шлюз:
+   a) проверяет user JWT
+   b) создаёт service JWT (type=service) для авторизации внутри лаб
+   c) отправляет HTTPS-запрос к nginx с клиентским сертификатом (mTLS)
+3. Nginx проверяет клиентский сертификат и проксирует запрос в лаб-контейнер
+4. Лаб-сервис проверяет service JWT и выполняет запрос к своим БД
 
-Request path:
-  User -> [HTTP] -> API Gateway -> [HTTPS + client cert] -> Nginx -> [HTTP] -> Lab Service -> DBs
+Путь запроса:
+  Пользователь → [HTTP] → API Gateway → [HTTPS + client cert] → Nginx → [HTTP] → Lab Service → БД
+
+Цепочки БД по лабораториям:
+  ЛР1: Elasticsearch → Neo4j → Redis (без PostgreSQL)
+  ЛР2: PostgreSQL → Neo4j → Redis → MongoDB
+  ЛР3: Elasticsearch → Neo4j → PostgreSQL
 """
 # FastAPI — веб-фреймворк для создания REST API с автогенерацией OpenAPI-документации
 # HTTPException — выброс HTTP-ошибок (401, 400 и т.д.) с деталями
@@ -94,7 +99,7 @@ HARDCODED_USERS = {
 # Каждая лаборатория может самостоятельно получить service-токен, предъявив
 # свой client_id и client_secret. Полученный токен содержит type=service,
 # что позволяет лабам обращаться к другим лабам без участия пользователя.
-#   lab1-service — клиент ЛР1 (ES + PG + Redis)
+#   lab1-service — клиент ЛР1 (ES + Neo4j + Redis)
 #   lab2-service — клиент ЛР2 (PG + Neo4j + Redis + MongoDB)
 #   lab3-service — клиент ЛР3 (ES + Neo4j + PG)
 SERVICE_CLIENTS = {
@@ -269,7 +274,7 @@ async def call_generator(method: str, path: str, **kwargs) -> dict:
 
 # ЛР1: 10 студентов с минимальным % посещения лекций, содержащих заданный термин, за период.
 # Цепочка БД: Elasticsearch (BM25-поиск термина → lecture_ids) →
-#   PostgreSQL (CTE MATERIALIZED: top-10 студентов с мин % посещения) →
+#   Neo4j (обход графа: SHOULD_ATTEND + ATTENDED → attendance_pct для каждого студента) →
 #   Redis (HGETALL student:{id} — кэш данных студентов, TTL=2ч)
 @app.get("/attendance/low")
 async def lab1_query(term: str, start_date: str, end_date: str, _=Depends(verify_token)):
@@ -509,7 +514,7 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
                 <div class="arch-box ng">Nginx<div class="arch-sub">mTLS verify + proxy</div></div>
                 <span class="arch-arrow">&#10145;</span>
                 <div style="display:flex;gap:8px">
-                    <div class="arch-box l1">Lab1<div class="arch-sub">ES+PG+Redis</div></div>
+                    <div class="arch-box l1">Lab1<div class="arch-sub">ES+Neo+Redis</div></div>
                     <div class="arch-box l2">Lab2<div class="arch-sub">PG+Neo+Redis+Mongo</div></div>
                     <div class="arch-box l3">Lab3<div class="arch-sub">ES+Neo+PG</div></div>
                 </div>
@@ -634,14 +639,14 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
                     <div class="auth-step st-nginx"><div class="anum">C</div><div><div class="atxt">Gateway отправляет HTTPS-запрос к nginx с клиентским сертификатом (mTLS)</div><div class="adet">client.crt подписан Root CA → nginx проверяет ssl_verify_client on → OK</div></div></div>
                     <div class="auth-step st-lab"><div class="anum">D</div><div><div class="atxt">Nginx проксирует в Lab1, лаб проверяет service JWT</div><div class="adet">POST /lab1/query + Authorization: Bearer &lt;service_jwt&gt;</div></div></div>
                     <div class="auth-step st-db"><div class="anum">1</div><div><div class="atxt"><span class="badge badge-es">Elasticsearch</span> BM25-поиск термина в лекциях → список lecture_id</div><div class="adet">multi_match: title, annotation, content_text + fuzziness=AUTO + russian_custom анализатор</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">2</div><div><div class="atxt"><span class="badge badge-pg">PostgreSQL</span> CTE MATERIALIZED: top-10 студентов с мин % посещения</div><div class="adet">matching_schedule + group_sched_count + attended -> ORDER BY pct ASC LIMIT 10, partition pruning</div></div></div>
-                    <div class="auth-step st-db"><div class="anum">3</div><div><div class="atxt"><span class="badge badge-redis">Redis</span> Pipeline HGETALL student:{id} для top-10 студентов</div><div class="adet">O(1) pipeline, TTL=2ч, пополнение кэша из PG при промахе</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">2</div><div><div class="atxt"><span class="badge badge-neo">Neo4j</span> Обход графа: Schedule→Lecture + SHOULD_ATTEND (total_scheduled) + ATTENDED (total_attended) → attendance_pct</div><div class="adet">ORDER BY attendance_pct ASC LIMIT 10 — без CTE MATERIALIZED, граф естественным образом хранит связи</div></div></div>
+                    <div class="auth-step st-db"><div class="anum">3</div><div><div class="atxt"><span class="badge badge-redis">Redis</span> Pipeline HGETALL student:{id} для top-10 студентов</div><div class="adet">O(1) pipeline, TTL=2ч, пополнение кэша из Neo4j при промахе</div></div></div>
                 </div>
             </div>
             <div class="arch-row" style="margin:6px 0">
                 <span class="badge badge-mtls">mTLS</span><span class="arch-arrow">&#10145;</span>
                 <span class="badge badge-es">ES</span><span class="arch-arrow">&#10145;</span>
-                <span class="badge badge-pg">PG</span><span class="arch-arrow">&#10145;</span>
+                <span class="badge badge-neo">Neo4j</span><span class="arch-arrow">&#10145;</span>
                 <span class="badge badge-redis">Redis</span>
             </div>
             <div class="row">
@@ -863,7 +868,7 @@ function pctBar(pct){
 function renderLab1(data){
     let html='';
     html+='<div class="meta-row">';
-    html+='<div class="meta-item"><span class="meta-label">Путь:</span><span class="badge badge-mtls">mTLS</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-es">ES</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-pg">PG</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-redis">Redis</span></div>';
+    html+='<div class="meta-item"><span class="meta-label">Путь:</span><span class="badge badge-mtls">mTLS</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-es">ES</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-neo">Neo4j</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-redis">Redis</span></div>';
     html+='<div class="meta-item"><span class="meta-label">Время:</span><span class="meta-val">'+data.execution_time_sec+'s</span></div>';
     html+='<div class="meta-item"><span class="meta-label">Результатов:</span><span class="meta-val">'+data.result.length+'</span></div>';
     html+='</div>';
@@ -992,7 +997,7 @@ async function runLab1(){
     const start=document.getElementById('lab1-start').value;
     const end=document.getElementById('lab1-end').value;
     const bar=document.getElementById('query-loading');bar.classList.add('active');
-    document.getElementById('result-area').innerHTML='<div style="color:#60a5fa;padding:8px;font-size:12px">Gateway <span class="badge badge-mtls">mTLS</span> &#10145; nginx &#10145; <span class="badge badge-es">ES</span> &#10145; <span class="badge badge-pg">PG</span> &#10145; <span class="badge badge-redis">Redis</span> ...</div>';
+    document.getElementById('result-area').innerHTML='<div style="color:#60a5fa;padding:8px;font-size:12px">Gateway <span class="badge badge-mtls">mTLS</span> &#10145; nginx &#10145; <span class="badge badge-es">ES</span> &#10145; <span class="badge badge-neo">Neo4j</span> &#10145; <span class="badge badge-redis">Redis</span> ...</div>';
     try{
         const r=await api('GET','/attendance/low?term='+encodeURIComponent(term)+'&start_date='+start+'&end_date='+end);
         lastRawData=r;
@@ -1049,7 +1054,7 @@ c4cont:`graph TB
     subgraph SYS["Система полиглотных отчётов"]
         GW["API Gateway<br/>FastAPI :8000<br/>OAuth2 + mTLS"]
         NX["Nginx :443<br/>mTLS verify + proxy"]
-        L1["Lab1 :8001<br/>ES-PG-Redis"]
+        L1["Lab1 :8001<br/>ES-Neo4j-Redis"]
         L2["Lab2 :8002<br/>PG-Neo4j-Redis-Mongo"]
         L3["Lab3 :8003<br/>ES-Neo4j-PG"]
         GEN["Генератор :8010<br/>Заполняет 5 БД"]
@@ -1071,7 +1076,7 @@ c4cont:`graph TB
     GEN -->|"Cypher"| N4
     GEN -->|"Bulk API"| ES
     L1 -->|"BM25 поиск"| ES
-    L1 -->|"CTE top-10"| PG
+    L1 -->|"SHOULD_ATTEND + ATTENDED"| N4
     L1 -->|"HGETALL"| RD
     L2 -->|"Лекции+группы"| PG
     L2 -->|"Граф связей"| N4
@@ -1096,7 +1101,7 @@ c4comp:`graph TB
     subgraph LB1["Lab1"]
         L1A["Token Verifier"]
         L1ES["ES Search<br/>BM25"]
-        L1PG["PG CTE Query<br/>top-10"]
+        L1N["Neo4j Traversal<br/>SHOULD_ATTEND+ATTENDED"]
         L1R["Redis Cache<br/>HGETALL"]
     end
     subgraph LB2["Lab2"]
@@ -1128,7 +1133,7 @@ c4comp:`graph TB
     ROUTE --> L1A
     ROUTE --> L2A
     ROUTE --> L3A
-    L1A --> L1ES --> L1PG --> L1R
+    L1A --> L1ES --> L1N --> L1R
     L2A --> L2PG --> L2N --> L2R --> L2M
     L3A --> L3ES --> L3N --> L3PG
     GPG --> GES
@@ -1144,7 +1149,7 @@ dfd1:`graph TB
     U["Пользователь"]
     A["1.0 Аутентификация OAuth2 JWT"]
     P["2.0 Проверка mTLS и проксирование nginx"]
-    R1["3.1 ЛР1: Посещаемость по термину<br/>ES-PG-Redis"]
+    R1["3.1 ЛР1: Посещаемость по термину<br/>ES-Neo4j-Redis"]
     R2["3.2 ЛР2: Нагрузка аудиторий<br/>PG-Neo4j-Redis-Mongo"]
     R3["3.3 ЛР3: Часы спец. дисциплин<br/>ES-Neo4j-PG"]
     PG[("PostgreSQL")]
@@ -1159,8 +1164,8 @@ dfd1:`graph TB
     P -->|"group_name"| R3
     R1 -->|"полнотекстовый поиск"| ES
     ES -->|"lecture_ids"| R1
-    R1 -->|"CTE top-10"| PG
-    PG -->|"student rows"| R1
+    R1 -->|"SHOULD_ATTEND + ATTENDED"| N4
+    N4 -->|"attendance_pct top-10"| R1
     R1 -->|"HGETALL"| RD
     RD -->|"student cache"| R1
     R2 -->|"lectures+groups"| PG

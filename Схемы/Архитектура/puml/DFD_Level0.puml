@@ -1,0 +1,23 @@
+@startuml DFD_Level0
+skinparam rectangle {
+    BorderColor #000000
+    FontSize 14
+}
+skinparam rectangle<<rounded>> {
+    BorderColor #000000
+    BackgroundColor #FFFFFF
+    FontSize 14
+    BorderRadius 15
+}
+skinparam arrow {
+    Color #000000
+    FontSize 12
+}
+
+rectangle "Пользователь" as User
+
+rectangle "Полиглотная система\nуправления\nучебным процессом" as System
+
+User -right-> System : JWT-токен, параметры отчёта
+System -left-> User : JSON-отчёт
+@enduml

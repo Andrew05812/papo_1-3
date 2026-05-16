@@ -1,0 +1,117 @@
+erDiagram
+    University ||--o{ Institute : "1:N"
+    Institute ||--o{ Department : "1:N"
+    Department ||--o{ DeptSpecialties : "M:N"
+    Speciality ||--o{ DeptSpecialties : "M:N"
+    Speciality ||--o{ LectureCourse : "1:N"
+    LectureCourse ||--o{ Lecture : "1:N"
+    Lecture ||--o{ LectureMaterial : "1:N"
+    Speciality ||--o{ StudentGroup : "1:N"
+    StudentGroup ||--o{ Student : "1:N"
+    Lecture ||--o{ Schedule : "1:N"
+    StudentGroup ||--o{ Schedule : "1:N"
+    Schedule ||--o{ Attendance : "1:N"
+    Student ||--o{ Attendance : "1:N"
+
+    University {
+        UUID id PK
+        VARCHAR500 name
+        VARCHAR100 short_name
+        TEXT address
+        INT founded_year
+    }
+    Institute {
+        UUID id PK
+        UUID university_id FK
+        VARCHAR500 name
+        VARCHAR100 short_name
+        VARCHAR300 dean
+    }
+    Department {
+        UUID id PK
+        UUID institute_id FK
+        VARCHAR500 name
+        VARCHAR100 short_name
+        VARCHAR300 head
+    }
+    Speciality {
+        UUID id PK
+        VARCHAR500 name
+        VARCHAR20 code
+        VARCHAR20 degree_level
+        INT duration_years
+    }
+    DeptSpecialties {
+        UUID id PK
+        UUID department_id FK
+        UUID speciality_id FK
+        BOOLEAN is_primary
+    }
+    LectureCourse {
+        UUID id PK
+        UUID speciality_id FK
+        VARCHAR500 name
+        TEXT description
+        INT semester
+        INT total_hours
+        INT lecture_hours
+        INT practice_hours
+        INT lab_hours
+    }
+    Lecture {
+        UUID id PK
+        UUID course_id FK
+        VARCHAR500 title
+        TEXT annotation
+        TEXT lecture_type
+        INT order_number
+        INT duration_minutes
+        VARCHAR200 equipment_req
+        TEXTArray tags
+    }
+    LectureMaterial {
+        UUID id PK
+        UUID lecture_id FK
+        TEXT content_type
+        VARCHAR500 title
+        TEXT content_text
+        VARCHAR1000 file_url
+        JSONB metadata
+    }
+    StudentGroup {
+        UUID id PK
+        UUID speciality_id FK
+        VARCHAR50 name
+        INT enrollment_year
+        VARCHAR300 curator
+    }
+    Student {
+        UUID id PK
+        UUID group_id FK
+        VARCHAR100 first_name
+        VARCHAR100 last_name
+        VARCHAR100 patronymic
+        VARCHAR255 email
+        VARCHAR20 student_card_number
+        DATE enrollment_date
+        VARCHAR50 status
+    }
+    Schedule {
+        UUID id PK
+        UUID lecture_id FK
+        UUID group_id FK
+        DATE scheduled_date
+        DATE week_start_date
+        TIME start_time
+        TIME end_time
+        VARCHAR50 classroom
+        VARCHAR300 teacher_name
+        VARCHAR50 status
+    }
+    Attendance {
+        UUID id PK
+        UUID schedule_id FK_no_constraint
+        UUID student_id FK_no_constraint
+        DATE week_start_date_partition_key
+        TIMESTAMP marked_at
+    }

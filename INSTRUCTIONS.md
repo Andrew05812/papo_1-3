@@ -92,7 +92,7 @@ curl -X POST http://localhost:8000/auth/token \
 5. **nginx проверяет клиентский сертификат** — `ssl_verify_client on`, если сертификат не подписан CA → 400
 6. **nginx проксирует HTTP-запрос** к `http://lab1:8001/query`
 7. **Lab1 проверяет service JWT** — `verify_service_token()`, если `type != service` → 403
-8. **Lab1 выполняет запрос** к своим БД (ES → PG → Redis)
+8. **Lab1 выполняет запрос** к своим БД (ES → Neo4j → Redis)
 9. **Ответ идёт обратно**: Lab1 → nginx → шлюз → пользователь
 
 ---
@@ -199,13 +199,13 @@ docker compose logs nginx --tail 5
 
 **Рассказывать так:**
 
-«Запрос идёт по трём хранилищам: Elasticsearch → PostgreSQL → Redis.
+«Запрос идёт по трём хранилищам: Elasticsearch → Neo4j → Redis.
 
 **Шаг 1 — Elasticsearch.** Мы ищем термин в индексе "lectures". Используем полнотекстовый поиск BM25 с fuzziness AUTO и кастомным анализатором russian_custom (standard tokenizer → lowercase → стоп-слова → стеммер). Это быстрее и точнее чем LIKE в PostgreSQL. Получаем список lecture_id.
 
-**Шаг 2 — PostgreSQL.** По этим lecture_id находим расписание в заданном периоде, студентов в соответствующих группах и их посещаемость. Используем CTE MATERIALIZED с LIMIT 10 — PostgreSQL выполняет heapsort O(N·log10) вместо полной сортировки. Таблица attendance партиционирована по week_start_date, поэтому partition pruning отсекает ненужные партиции. Batch-запрос через ANY(%s::uuid[]) вместо построчных.
+**Шаг 2 — Neo4j.** По этим lecture_id обходим граф: находим Schedule через PART_OF для лекций в заданном периоде, затем через SHOULD_ATTEND определяем сколько занятий студент должен был посетить (total_scheduled), а через ATTENDED — сколько фактически посетил (total_attended). Вычисляем attendance_pct = total_attended / total_scheduled * 100, сортируем ASC и берём LIMIT 10. Это заменяет CTE MATERIALIZED в PostgreSQL — граф естественным образом хранит связи студент↔расписание↔лекция.
 
-**Шаг 3 — Redis.** Для топ-10 студентов проверяем кэш — pipeline HGETALL student:{uuid}. При промахе заполняем из данных PostgreSQL. TTL 2 часа — кэш автоматически очищается.»
+**Шаг 3 — Redis.** Для топ-10 студентов проверяем кэш — pipeline HGETALL student:{uuid}. При промахе заполняем из данных Neo4j. TTL 2 часа — кэш автоматически очищается.»
 
 ### ЛР2 — подробно
 
@@ -268,20 +268,21 @@ docker compose logs nginx --tail 5
 | schedule | id, lecture_id FK, group_id FK, scheduled_date, week_start_date, start_time, end_time, classroom, teacher_name, **status**='scheduled' | |
 | attendance | id, schedule_id(**no FK**), student_id(**no FK**), week_start_date(**partition key**), marked_at | PK(id, week_start_date), PARTITION BY RANGE, 4 партиции 2025Q3–2026Q2 |
 
-### Neo4j — 5 типов узлов, 5 типов связей
+### Neo4j — 5 типов узлов, 6 типов связей
 
 | Узел | Свойства |
 |------|----------|
-| Student | id, name, card_number |
-| StudentGroup | id, name |
-| Schedule | id, date, time, classroom |
-| Lecture | id, title, type |
-| LectureCourse | id, name, semester |
+| Student | id, name, card_number, first_name, last_name, patronymic, email, status, enrollment_date, group_id |
+| StudentGroup | id, name, enrollment_year, curator, speciality_id |
+| Schedule | id, date, time, classroom, week_start_date, teacher_name |
+| Lecture | id, title, type, equipment_req, tags |
+| LectureCourse | id, name, semester, total_hours, lecture_hours, practice_hours, lab_hours, description, speciality_id |
 
 | Связь | Направление | Описание |
 |-------|-------------|----------|
 | MEMBER_OF | Student → StudentGroup | Студент состоит в группе |
 | SHOULD_ATTEND | Student → Schedule | Студент должен присутствовать |
+| ATTENDED | Student → Schedule | Студент фактически присутствовал |
 | CONTAINS | StudentGroup → Schedule | Группа имеет занятие |
 | PART_OF | Schedule → Lecture | Занятие = часть лекции |
 | BELONGS_TO | Lecture → LectureCourse | Лекция относится к курсу |
@@ -317,7 +318,7 @@ docker compose logs nginx --tail 5
 | nginx | 443 | mTLS-прокси: проверяет client cert, проксирует к лабам |
 | generator | 8010 | Заполняет все 5 БД напрямую |
 | api-gateway | 8000 | OAuth2 + mTLS-клиент + проксирование + Web UI |
-| lab1 | 8001 | ЛР1: ES → PG → Redis |
+| lab1 | 8001 | ЛР1: ES → Neo4j → Redis |
 | lab2 | 8002 | ЛР2: PG → Neo4j → Redis → MongoDB |
 | lab3 | 8003 | ЛР3: ES → Neo4j → PG |
 

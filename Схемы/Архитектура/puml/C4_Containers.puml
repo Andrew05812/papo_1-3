@@ -1,4 +1,3 @@
-```plantuml
 @startuml C4_Containers
 !include <C4/C4_Container>
 
@@ -11,7 +10,7 @@ Person(user, "Пользователь", "Формирует отчёты чер
 System_Boundary(report_system, "Система полиглотных отчётов") {
     Container(gateway, "API Gateway", "FastAPI, Python, :8000", "JWT-аутентификация (password + client_credentials), mTLS-клиент, проксирование запросов к лабам через nginx")
     Container(nginx, "Nginx Reverse Proxy", "Nginx, :443", "Терминирует TLS, проверяет клиентский сертификат (mTLS), маршрутизирует /lab1|lab2|lab3 к сервисам")
-    Container(lab1, "Lab1 Service", "FastAPI, Python, :8001", "10 студентов с мин. % посещения по термину (ES→Neo4j→Redis)")
+    Container(lab1, "Lab1 Service", "FastAPI, Python, :8001", "10 студентов с мин. % посещения по термину (ES→PG→Redis)")
     Container(lab2, "Lab2 Service", "FastAPI, Python, :8002", "Аудиторная нагрузка по семестру и году (PG→Neo4j→Redis→MongoDB)")
     Container(lab3, "Lab3 Service", "FastAPI, Python, :8003", "Часы по спец. дисциплинам для группы (ES→Neo4j→PG)")
     Container(generator, "Генератор данных", "FastAPI, Python, :8010", "Наполняет все 5 БД тестовыми данными напрямую")
@@ -37,7 +36,7 @@ Rel(generator, neo4j, "Записывает граф", "Cypher")
 Rel(generator, es, "Индексирует лекции", "Bulk API")
 
 Rel(lab1, es, "Ищет лекции по термину", "REST API")
-Rel(lab1, neo4j, "SHOULD_ATTEND + ATTENDED → attendance_pct", "Cypher")
+Rel(lab1, pg, "Читает посещаемость, студентов", "SQL")
 Rel(lab1, redis, "Читает кэш студентов", "Redis commands")
 
 Rel(lab2, pg, "Читает группы, курсы, лекции", "SQL")
@@ -50,4 +49,3 @@ Rel(lab3, neo4j, "Обходит граф Student→Group→Schedule→Lecture",
 Rel(lab3, pg, "Читает посещаемость, часы", "SQL")
 
 @enduml
-```

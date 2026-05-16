@@ -5,7 +5,7 @@
   • PostgreSQL — 12 таблиц, включая партиционированную таблицу attendance
   • Elasticsearch — индекс lectures с анализатором russian_custom
   • Neo4j — 5 типов узлов (Student, StudentGroup, Schedule, Lecture, LectureCourse)
-           и 5 типов связей (MEMBER_OF, CONTAINS, PART_OF, BELONGS_TO, SHOULD_ATTEND)
+            и 6 типов связей (MEMBER_OF, CONTAINS, PART_OF, BELONGS_TO, SHOULD_ATTEND, ATTENDED)
   • Redis     — кэш студентов в Hash-ключах student:{uuid} с TTL=2 ч (7200 с)
   • MongoDB   — вложенный документ иерархии University→Institutes→Departments→Specialities
 """
@@ -702,12 +702,13 @@ def populate_elasticsearch(course_ids, lecture_ids, lecture_material_ids):
 def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids):
     """
     Заполнение Neo4j: 5 типов узлов (Student, StudentGroup, Schedule, Lecture,
-    LectureCourse) и 5 типов связей:
+    LectureCourse) и 6 типов связей:
       • MEMBER_OF     — студент → группа
       • CONTAINS      — группа → расписание
       • PART_OF       — расписание → лекция
       • BELONGS_TO    — лекция → курс
-      • SHOULD_ATTEND — студент → расписание
+      • SHOULD_ATTEND — студент → расписание (должен присутствовать)
+      • ATTENDED      — студент → расписание (фактически присутствовал)
     Данные читаются из PG, узлы и связи создаются пакетами через UNWIND
     (по 500 записей) для производительности.
     """
@@ -726,59 +727,68 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
     cur = pg.cursor()
 
     with driver.session() as session:
-        # Создание узлов Student (ФИО + номер студенческого билета), батч 500
-        cur.execute("SELECT id, first_name, last_name, patronymic, student_card_number FROM student")
+        # Создание узлов Student (все свойства для замены PG-запросов), батч 500
+        cur.execute("SELECT id, first_name, last_name, patronymic, student_card_number, email, status, enrollment_date, group_id FROM student")
         students = cur.fetchall()
         batch = []
         for s in students:
-            batch.append({"id": str(s[0]), "name": f"{s[1]} {s[2]} {s[3]}", "card_number": s[4]})
+            batch.append({
+                "id": str(s[0]), "name": f"{s[1]} {s[2]} {s[3]}", "card_number": s[4],
+                "first_name": s[1], "last_name": s[2], "patronymic": s[3] or "",
+                "email": s[5], "status": s[6], "enrollment_date": str(s[7]), "group_id": str(s[8])
+            })
             if len(batch) >= 500:
                 session.run(
-                    "UNWIND $batch AS row CREATE (s:Student {id: row.id, name: row.name, card_number: row.card_number})",
+                    "UNWIND $batch AS row CREATE (s:Student {id: row.id, name: row.name, card_number: row.card_number, first_name: row.first_name, last_name: row.last_name, patronymic: row.patronymic, email: row.email, status: row.status, enrollment_date: row.enrollment_date, group_id: row.group_id})",
                     batch=batch
                 )
                 batch = []
         if batch:
             session.run(
-                "UNWIND $batch AS row CREATE (s:Student {id: row.id, name: row.name, card_number: row.card_number})",
+                "UNWIND $batch AS row CREATE (s:Student {id: row.id, name: row.name, card_number: row.card_number, first_name: row.first_name, last_name: row.last_name, patronymic: row.patronymic, email: row.email, status: row.status, enrollment_date: row.enrollment_date, group_id: row.group_id})",
                 batch=batch
             )
 
-        # Создание узлов StudentGroup (название группы)
-        cur.execute("SELECT id, name FROM student_group")
+        # Создание узлов StudentGroup (название + год + куратор + специальность)
+        cur.execute("SELECT id, name, enrollment_year, curator, speciality_id FROM student_group")
         groups = cur.fetchall()
-        batch = [{"id": str(g[0]), "name": g[1]} for g in groups]
+        batch = [{"id": str(g[0]), "name": g[1], "enrollment_year": g[2], "curator": g[3] or "", "speciality_id": str(g[4])} for g in groups]
         session.run(
-            "UNWIND $batch AS row CREATE (g:StudentGroup {id: row.id, name: row.name})",
+            "UNWIND $batch AS row CREATE (g:StudentGroup {id: row.id, name: row.name, enrollment_year: row.enrollment_year, curator: row.curator, speciality_id: row.speciality_id})",
             batch=batch
         )
 
-        # Создание узлов Schedule (дата, время, аудитория), батч 500
-        cur.execute("SELECT id, scheduled_date, start_time, classroom FROM schedule")
+        # Создание узлов Schedule (дата, время, аудитория, неделя, преподаватель), батч 500
+        cur.execute("SELECT id, scheduled_date, start_time, classroom, week_start_date, teacher_name FROM schedule")
         schedules = cur.fetchall()
-        batch = [{"id": str(s[0]), "date": str(s[1]), "time": str(s[2]), "classroom": s[3] or ""} for s in schedules]
+        batch = [{"id": str(s[0]), "date": str(s[1]), "time": str(s[2]), "classroom": s[3] or "", "week_start_date": str(s[4]), "teacher_name": s[5] or ""} for s in schedules]
         for i in range(0, len(batch), 500):
             session.run(
-                "UNWIND $batch AS row CREATE (s:Schedule {id: row.id, date: row.date, time: row.time, classroom: row.classroom})",
+                "UNWIND $batch AS row CREATE (s:Schedule {id: row.id, date: row.date, time: row.time, classroom: row.classroom, week_start_date: row.week_start_date, teacher_name: row.teacher_name})",
                 batch=batch[i:i+500]
             )
 
-        # Создание узлов Lecture (название, тип), батч 500
-        cur.execute("SELECT id, title, lecture_type FROM lecture")
+        # Создание узлов Lecture (название, тип, оборудование, теги), батч 500
+        cur.execute("SELECT id, title, lecture_type, equipment_req, tags FROM lecture")
         lectures = cur.fetchall()
-        batch = [{"id": str(l[0]), "title": l[1], "type": l[2] or ""} for l in lectures]
+        batch = []
+        for l in lectures:
+            tags = l[4] if l[4] else []
+            if isinstance(tags, str):
+                tags = [t.strip() for t in tags.split(",") if t.strip()]
+            batch.append({"id": str(l[0]), "title": l[1], "type": l[2] or "", "equipment_req": l[3] or "", "tags": tags})
         for i in range(0, len(batch), 500):
             session.run(
-                "UNWIND $batch AS row CREATE (l:Lecture {id: row.id, title: row.title, type: row.type})",
+                "UNWIND $batch AS row CREATE (l:Lecture {id: row.id, title: row.title, type: row.type, equipment_req: row.equipment_req, tags: row.tags})",
                 batch=batch[i:i+500]
             )
 
-        # Создание узлов LectureCourse (название, семестр)
-        cur.execute("SELECT id, name, semester FROM lecture_course")
+        # Создание узлов LectureCourse (название, семестр, часы, описание, специальность)
+        cur.execute("SELECT id, name, semester, total_hours, lecture_hours, practice_hours, lab_hours, description, speciality_id FROM lecture_course")
         courses = cur.fetchall()
-        batch = [{"id": str(c[0]), "name": c[1], "semester": c[2]} for c in courses]
+        batch = [{"id": str(c[0]), "name": c[1], "semester": c[2], "total_hours": c[3] or 0, "lecture_hours": c[4] or 0, "practice_hours": c[5] or 0, "lab_hours": c[6] or 0, "description": c[7] or "", "speciality_id": str(c[8])} for c in courses]
         session.run(
-            "UNWIND $batch AS row CREATE (c:LectureCourse {id: row.id, name: row.name, semester: row.semester})",
+            "UNWIND $batch AS row CREATE (c:LectureCourse {id: row.id, name: row.name, semester: row.semester, total_hours: row.total_hours, lecture_hours: row.lecture_hours, practice_hours: row.practice_hours, lab_hours: row.lab_hours, description: row.description, speciality_id: row.speciality_id})",
             batch=batch
         )
 
@@ -833,6 +843,16 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
         for i in range(0, len(batch), 500):
             session.run(
                 "UNWIND $batch AS row MATCH (s:Student {id: row.sid}), (sch:Schedule {id: row.schid}) CREATE (s)-[:SHOULD_ATTEND]->(sch)",
+                batch=batch[i:i+500]
+            )
+
+        # Связь ATTENDED: Student → Schedule (фактическое посещение — из таблицы attendance)
+        cur.execute("SELECT DISTINCT student_id, schedule_id FROM attendance")
+        attended = cur.fetchall()
+        batch = [{"sid": str(a[0]), "schid": str(a[1])} for a in attended]
+        for i in range(0, len(batch), 500):
+            session.run(
+                "UNWIND $batch AS row MATCH (s:Student {id: row.sid}), (sch:Schedule {id: row.schid}) CREATE (s)-[:ATTENDED]->(sch)",
                 batch=batch[i:i+500]
             )
 
