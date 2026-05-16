@@ -23,9 +23,9 @@ rectangle "Пользователь" as User
 rectangle "1.0\nАутентификация\nOAuth2 (JWT)" as Auth
 rectangle "2.0\nПроверка mTLS\nи проксирование\n(nginx)" as Proxy
 
-rectangle "3.1\nЛР1: Посещаемость\nпо термину\n(ES→PG→Redis)" as Report1
-rectangle "3.2\nЛР2: Нагрузка аудиторий\nпо семестру/году\n(PG→Neo4j→Redis→Mongo)" as Report2
-rectangle "3.3\nЛР3: Часы спец. дисциплин\nпо группе\n(ES→Neo4j→PG)" as Report3
+rectangle "3.1\nЛР1: Посещаемость\nпо термину\n(ES→Neo4j→PG→Redis)" as Report1
+rectangle "3.2\nЛР2: Нагрузка аудиторий\nпо семестру/году\n(Neo4j)" as Report2
+rectangle "3.3\nЛР3: Часы спец. дисциплин\nпо группе\n(Neo4j→PG)" as Report3
 
 rectangle "PostgreSQL" as PG <<datastore>>
 rectangle "Redis" as Redis <<datastore>>
@@ -41,26 +41,20 @@ Proxy -down-> Report3 : group_name
 
 Report1 -down-> ES : полнотекстовый поиск
 ES -up-> Report1 : lecture_ids
-Report1 -down-> PG : CTE top-10 attendance
-PG -up-> Report1 : student rows
+Report1 -down-> Neo4j : SHOULD_ATTEND обход
+Neo4j -up-> Report1 : student_schedule pairs
+Report1 -down-> PG : CTE is_present top-10
+PG -up-> Report1 : attendance_pct rows
 Report1 -down-> Redis : HGETALL pipeline
 Redis -up-> Report1 : student cache
 
-Report2 -down-> PG : lectures + groups + counts
-PG -up-> Report2 : course/group data
-Report2 -down-> Neo4j : graph traversal
-Neo4j -up-> Report2 : group/course links
-Report2 -down-> Redis : HGETALL pipeline
-Redis -up-> Report2 : student details
-Report2 -down-> Mongo : hierarchy findOne
-Mongo -up-> Report2 : university→inst→dept
+Report2 -down-> Neo4j : Cypher: фильтр+обход+агрегация+иерархия
+Neo4j -up-> Report2 : lectures+groups+hierarchy+students
 
-Report3 -down-> ES : filter by special tags
-ES -up-> Report3 : lecture_ids
-Report3 -down-> Neo4j : Student→Group→Schedule→Lecture
-Neo4j -up-> Report3 : student/course/schedule
-Report3 -down-> PG : batch attendance + hours
-PG -up-> Report3 : attendance stats
+Report3 -down-> Neo4j : Student→Group→Schedule→Lecture+special tags+иерархия
+Neo4j -up-> Report3 : student/course/schedule/hours/hierarchy
+Report3 -down-> PG : is_present=TRUE в attendance
+PG -up-> Report3 : attended schedule_ids
 
 Report1 -up-> Proxy : JSON
 Report2 -up-> Proxy : JSON
