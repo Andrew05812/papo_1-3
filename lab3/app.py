@@ -28,26 +28,30 @@ Lab3 Service — запланированные и посещённые часы
   Batch ANY(%s::uuid[]) для attendance (partitioned), lecture_hours, student details, hierarchy.
   attended_hours = attended_count * 2 (1 лекция = 2 ак.ч.).
 """
-from fastapi import FastAPI, Query, Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from elasticsearch import Elasticsearch
-from neo4j import GraphDatabase
-import psycopg2
-import jwt
-import os
-import logging
-import time
+from fastapi import FastAPI, Query, Depends, HTTPException          # веб-фреймворк для REST API
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials  # схема Bearer-авторизации для JWT
+from elasticsearch import Elasticsearch                              # клиент Elasticsearch для полнотекстового поиска и фильтрации по тегам
+from neo4j import GraphDatabase                                     # драйвер Neo4j для обхода графа связей студент→группа→расписание→лекция→курс
+import psycopg2                                                     # драйвер PostgreSQL для реляционных запросов (группы, посещаемость, иерархия)
+import jwt                                                          # библиотека PyJWT для декодирования и проверки сервисных токенов
+import os                                                           # чтение переменных окружения (хосты, пароли, секреты)
+import logging                                                      # логирование шагов запроса и ошибок
+import time                                                         # замер времени выполнения запроса
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Lab 3 - Hours Report")
 
+# Секрет и алгоритм для верификации JWT-токенов сервисного типа.
+# Токен с type="service" выдаётся шлюзом авторизации; он подтверждает,
+# что запрос приходит от доверенного микросервиса, а не от конечного пользователя.
 JWT_SECRET = os.environ.get("JWT_SECRET", "polyglot_jwt_secret_key_2026")
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
-security = HTTPBearer()
+security = HTTPBearer()  # автоматически извлекает Bearer-токен из заголовка Authorization
 
 
+# Принимаются только сервисные токены (type=service), пользовательские токены отклоняются — защита в глубину (defense in depth)
 def verify_service_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -59,6 +63,8 @@ def verify_service_token(credentials: HTTPAuthorizationCredentials = Depends(sec
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+# Параметры подключения к трём базам данных (Elasticsearch, PostgreSQL, Neo4j),
+# читаемые из переменных окружения Docker-контейнера.
 ES_HOST = os.environ.get("ES_HOST", "elasticsearch")
 ES_PORT = int(os.environ.get("ES_PORT", 9200))
 PG_HOST = os.environ.get("POSTGRES_HOST", "postgres")
@@ -70,21 +76,35 @@ NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://neo4j:7687")
 NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
 NEO4J_PASS = os.environ.get("NEO4J_PASSWORD", "password12345")
 
+# По условию задания: 1 лекция = 2 академических часа.
+# Используется для пересчёта количества посещённых лекций в академические часы.
 HOURS_PER_LECTURE = 2
 
 
+# Возвращает клиент Elasticsearch для поиска BM25
 def get_es():
     return Elasticsearch(f"http://{ES_HOST}:{ES_PORT}")
 
 
+# Возвращает драйвер Neo4j для обхода графа
 def get_neo4j():
     return GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS))
 
 
+# Возвращает соединение PostgreSQL для batch-запросов
 def get_pg():
     return psycopg2.connect(host=PG_HOST, port=PG_PORT, dbname=PG_DB, user=PG_USER, password=PG_PASS)
 
 
+# =============================================================================
+# Основной запрос: отчёт по запланированным и посещённым часам спец. дисциплин
+# =============================================================================
+# Путь выполнения запроса (4 шага):
+#   Шаг 0 (PostgreSQL) — lookup: group_name → group_id (пользователь вводит название, а не UUID)
+#   Шаг 1 (Elasticsearch) — фильтрация лекций по тегам спец. дисциплин (terms query по keyword-полю)
+#   Шаг 2 (Neo4j) — обход графа от стартовой ноды Group по цепочке связей
+#   Шаг 3 (PostgreSQL) — batch-запросы посещаемости, запланированных часов, деталей студентов, иерархии
+# =============================================================================
 @app.get("/query")
 def query_hours_report(
     group_name: str = Query(..., description="Название группы учащихся"),
@@ -93,6 +113,11 @@ def query_hours_report(
     steps = []
     start = time.time()
 
+    # ── Шаг 0: Lookup group_name → group_id ──
+    # Пользователь вводит название группы (например, "ПИ-301"), а не её UUID.
+    # Поэтому сначала ищем строку группы в PostgreSQL по имени,
+    # чтобы получить group_id, enrollment_year, curator и speciality_id,
+    # которые понадобятся на последующих шагах.
     pg = get_pg()
     cur = pg.cursor()
     cur.execute("SELECT id, name, enrollment_year, curator, speciality_id FROM student_group WHERE name = %s", (group_name,))
@@ -115,6 +140,12 @@ def query_hours_report(
     logger.info("Step 1: ES - lectures with special discipline tags")
     es = get_es()
 
+    # ── Шаг 1: Фильтрация лекций по тегам специальной дисциплины ──
+    # В Elasticsearch индекс "lectures" хранит поле tags как keyword-тип.
+    # Фильтр terms query по keyword-полю работает значительно быстрее,
+    # чем array_contains / ANY() в PostgreSQL на больших массивах.
+    # Дополнительно ограничиваем lecture_type="лекция" (исключаем семинары, лабораторные).
+    # Результат: список lecture_id лекций спец. дисциплин для передачи в Neo4j.
     special_tags = ["спецдисциплина", "кафедральная_дисциплина", "профильная_дисциплина",
                     "дисциплина_кафедры", "специализация"]
 
@@ -160,6 +191,12 @@ def query_hours_report(
     logger.info(f"Step 2: Neo4j - graph traversal for group {group_name}")
     driver = get_neo4j()
 
+    # ── Шаг 2: Обход графа Neo4j от одной стартовой ноды Group ──
+    # Цепочка связей: Student-[MEMBER_OF]->Group-[CONTAINS]->Schedule-[PART_OF]->Lecture-[BELONGS_TO]->Course
+    # Стартуем от единственной ноды StudentGroup с известным group_id (из Шага 0).
+    # Фильтруем Lecture по lecture_ids (из Шага 1) — остаются только спец. дисциплины.
+    # Обход по индексу — O(E), эффективнее чем 4 JOIN в PostgreSQL.
+    # Результат: для каждого студента — набор курсов и расписаний спец. дисциплин.
     student_course_schedules = {}
 
     with driver.session() as session:
@@ -216,6 +253,14 @@ def query_hours_report(
     pg = get_pg()
     cur = pg.cursor()
 
+    # ── Шаг 3: Batch-запросы в PostgreSQL ──
+    # Используем ANY(%s::uuid[]) вместо построчных запросов — один запрос покрывает
+    # весь набор UUID. На partitioned/indexed таблице attendance это O(K),
+    # где K ≈ количество записей расписания группы (~40).
+    # Расчёт посещённых часов: attended_hours = attended_count * HOURS_PER_LECTURE (1 лекция = 2 ак.ч.).
+
+    # Получаем запланированные часы (lecture_hours) из таблицы lecture_course
+    # для всех курсов спец. дисциплин, найденных на Шаге 2.
     course_ids_list = list(course_set)
     cur.execute("""
         SELECT id, lecture_hours FROM lecture_course WHERE id = ANY(%s::uuid[])
@@ -224,6 +269,9 @@ def query_hours_report(
 
     student_ids_list = list(student_set)
 
+    # Batch-запрос посещаемости: DISTINCT пар (student_id, schedule_id)
+    # из секционированной таблицы attendance. ANY(%s::uuid[]) позволяет
+    # передать весь массив UUID одним параметром вместо N отдельных SELECT.
     all_schedule_ids = []
     for sid, sdata in student_course_schedules.items():
         for cid, cdata in sdata["courses"].items():
@@ -237,12 +285,15 @@ def query_hours_report(
     """, (student_ids_list, list(set(all_schedule_ids))))
     attendance_rows = cur.fetchall()
 
+    # Формируем карту посещений: student_id → set(schedule_id),
+    # чтобы на этапе агрегации быстро проверить, посещал ли студент данное расписание.
     attended_map = {}
     for row in attendance_rows:
         sid = str(row[0])
         schid = str(row[1])
         attended_map.setdefault(sid, set()).add(schid)
 
+    # Batch-запрос детальной информации о студентах (ФИО, email, номер студенческого билета и т.д.)
     cur.execute("""
         SELECT id, first_name, last_name, patronymic, email, student_card_number,
                group_id, status, enrollment_date
@@ -262,6 +313,9 @@ def query_hours_report(
             "enrollment_date": str(row[8])
         }
 
+    # ── Иерархический запрос: институт → кафедра для данной группы ──
+    # Цепочка JOIN: student_group → speciality → department_specialities → department → institute
+    # Позволяет получить названия института и кафедры, к которым относится группа.
     cur.execute("""
         SELECT sg.id, i.name, d.name
         FROM student_group sg
@@ -283,6 +337,9 @@ def query_hours_report(
     cur.close()
     pg.close()
 
+    # ── Агрегация результатов: формируем отчёт по каждому студенту ──
+    # Пересечение schedule_ids курса с attended_map даёт количество посещённых лекций.
+    # attended_hours = attended_count * HOURS_PER_LECTURE (2 ак.ч. за лекцию).
     student_results = []
     for sid, sdata in student_course_schedules.items():
         course_reports = []
@@ -340,6 +397,7 @@ def query_hours_report(
     }
 
 
+# Endpoint проверки работоспособности (health-check)
 @app.get("/")
 def root():
     return {"service": "lab3", "description": "Hours report: ES → Neo4j → PostgreSQL"}

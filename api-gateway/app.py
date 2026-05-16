@@ -13,17 +13,35 @@ Role: single entry point for user.
 Request path:
   User -> [HTTP] -> API Gateway -> [HTTPS + client cert] -> Nginx -> [HTTP] -> Lab Service -> DBs
 """
+# FastAPI — веб-фреймворк для создания REST API с автогенерацией OpenAPI-документации
+# HTTPException — выброс HTTP-ошибок (401, 400 и т.д.) с деталями
+# Depends — механизм внедрения зависимостей (DI), используется для проверки токена
+# Request — объект HTTP-запроса, нужен для чтения тела запроса в произвольном формате
 from fastapi import FastAPI, HTTPException, Depends, Request
+# HTMLResponse — возврат HTML-страницы (веб-интерфейс gateway)
+# JSONResponse — возврат JSON-ответа с явным указанием типа
 from fastapi.responses import HTMLResponse, JSONResponse
+# HTTPBearer — схема безопасности: ожидает заголовок Authorization: Bearer <token>
+# HTTPAuthorizationCredentials — объект с полем .credentials (сам JWT-токен)
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+# OAuth2PasswordRequestForm — стандартная форма OAuth2 (grant_type, username, password)
+# используется для эндпоинта /auth/token по спецификации OAuth2 RFC 6749
 from fastapi.security import OAuth2PasswordRequestForm
+# BaseModel — базовый класс Pydantic для валидации и сериализации данных запросов/ответов
 from pydantic import BaseModel
+# jwt (PyJWT) — библиотека для создания и проверки JWT-токенов (HS256 подпись)
 import jwt
+# httpx — асинхронный HTTP-клиент для запросов к nginx (mTLS) и generator
 import httpx
+# ssl — модуль для создания SSL-контекста с клиентским сертификатом (mTLS)
 import ssl
+# os — чтение переменных окружения (JWT_SECRET, пути к сертификатам, URL-адреса)
 import os
+# logging — логирование событий (INFO-уровень) для отладки и мониторинга
 import logging
+# datetime, timedelta — работа с временем: iat (выдача) и exp (срок действия) JWT
 from datetime import datetime, timedelta
+# quote — URL-кодирование кириллицы и спецсимволов в параметрах запроса
 from urllib.parse import quote
 
 logging.basicConfig(level=logging.INFO)
@@ -31,31 +49,72 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="API Gateway - OAuth2 + mTLS", docs_url="/docs")
 
+# Упрощённая схема OAuth2: токен выдаётся напрямую пользователю без авторизационного кода.
+# JWT_SECRET — общий секрет для подписи всех JWT (HS256). В продакшене берётся из окружения,
+# здесь — фиксированный ключ для демонстрации.
+# Два типа токенов:
+#   password grant → type=user, TTL=24ч — для людей (браузер, curl)
+#   client_credentials grant → type=service, TTL=1ч — для сервисных клиентов (lab1/2/3)
 JWT_SECRET = os.environ.get("JWT_SECRET", "polyglot_jwt_secret_key_2026")
+# JWT_ALGORITHM — алгоритм симметричной подписи HMAC-SHA256
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 
+# NGINX_URL — адрес nginx-прокси внутри Docker-сети.
+# Gateway общается с nginx по HTTPS с клиентским сертификатом (mTLS).
+# Nginx проверяет client.crt (ssl_verify_client on) и проксирует запрос
+# к соответствующему лаб-контейнеру по обычному HTTP внутри Docker-сети.
 NGINX_URL = os.environ.get("NGINX_URL", "https://nginx:443")
+# GENERATOR_URL — адрес генератора данных (внутренний HTTP, mTLS не нужен,
+# т.к. генератор находится в той же Docker-сети и не принимает внешние запросы)
 GENERATOR_URL = os.environ.get("GENERATOR_URL", "http://generator:8010")
 
+# Пути к сертификатам для mTLS (примонтированы из генератора сертификатов):
+# CERT_CA — корневой CA-сертификат (ca.crt), которым проверяется подлинность
+#   серверного сертификата nginx (server.crt). Убедиться, что nginx — тот, за кого себя выдаёт.
+# CERT_CLIENT_CRT — клиентский сертификат gateway (client.crt), подписан тем же CA.
+#   Nginx проверяет его при ssl_verify_client on — подтверждает, что запрос от доверенного клиента.
+# CERT_CLIENT_KEY — закрытый ключ gateway (client.key), используется для TLS-handshake
+#   при установке зашифрованного канала с nginx.
 CERT_CA = os.environ.get("CERT_CA", "/certs/ca.crt")
 CERT_CLIENT_CRT = os.environ.get("CERT_CLIENT_CRT", "/certs/client.crt")
 CERT_CLIENT_KEY = os.environ.get("CERT_CLIENT_KEY", "/certs/client.key")
 
+# Предустановленные тестовые пользователи для демонстрации OAuth2 password grant.
+# В реальной системе заменяются на БД пользователей + хеши паролей (bcrypt/argon2).
+#   admin — администратор, полный доступ
+#   demo — демо-пользователь для демонстрации
+#   test — тестовый пользователь для проверки
 HARDCODED_USERS = {
     "admin": "admin123",
     "demo": "demo123",
     "test": "test123",
 }
 
+# Сервисные клиенты для OAuth2 client_credentials grant (RFC 6749 §4.4).
+# Каждая лаборатория может самостоятельно получить service-токен, предъявив
+# свой client_id и client_secret. Полученный токен содержит type=service,
+# что позволяет лабам обращаться к другим лабам без участия пользователя.
+#   lab1-service — клиент ЛР1 (ES + PG + Redis)
+#   lab2-service — клиент ЛР2 (PG + Neo4j + Redis + MongoDB)
+#   lab3-service — клиент ЛР3 (ES + Neo4j + PG)
 SERVICE_CLIENTS = {
     "lab1-service": "lab1-secret",
     "lab2-service": "lab2-secret",
     "lab3-service": "lab3-secret",
 }
 
+# Экземпляр схемы Bearer — FastAPI будет автоматически извлекать токен
+# из заголовка Authorization: Bearer <token> и передавать в Depends()
 security = HTTPBearer()
 
 
+# Создание JWT-токена с заданными параметрами.
+# Структура payload (полезная нагрузка токена):
+#   sub — субъект токена: имя пользователя (для type=user) или client_id (для type=service)
+#   type — тип токена: "user" (пользовательский, 24ч) или "service" (сервисный, 1ч)
+#   iat — issued at: время выдачи токена (для аудита и проверки свежести)
+#   exp — expiration: срок действия, после которого токен считается недействительным
+# Токен подписан алгоритмом HS256 с общим секретом JWT_SECRET.
 def create_jwt_token(sub: str, token_type: str = "user", ttl_hours: int = 24) -> str:
     payload = {
         "sub": sub,
@@ -66,10 +125,18 @@ def create_jwt_token(sub: str, token_type: str = "user", ttl_hours: int = 24) ->
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+# Создание сервисного JWT-токена (type=service), который gateway отправляет
+# в лаб-контейнер через nginx. Лаборатория проверяет, что type=service
+# (не "user"!), — это гарантирует, что запрос пришёл от доверенного gateway,
+# а не напрямую от пользователя. TTL=1ч, sub="gateway" — идентификатор эмитента.
 def create_service_token() -> str:
     return create_jwt_token("gateway", token_type="service", ttl_hours=1)
 
 
+# Проверка пользовательского JWT-токена для защиты API-эндпоинтов.
+# FastAPI автоматически извлекает токен из заголовка Authorization через Depends(security).
+# Если токен просрочен (ExpiredSignatureError) или невалиден (InvalidTokenError) — 401.
+# Возвращает раскодированный payload (dict) для дальнейшего использования.
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     try:
         payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -80,6 +147,15 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
+# Создание SSL-контекста для взаимной аутентификации (mTLS):
+# 1. ssl.create_default_context(cafile=CERT_CA) — загружает CA-сертификат для
+#    проверки серверного сертификата nginx (убедиться, что nginx подписан доверенным CA)
+# 2. load_cert_chain — загружает клиентский сертификат и закрытый ключ gateway;
+#    nginx проверит этот сертификат при ssl_verify_client on
+# 3. check_hostname=False — отключает проверку CN/hostname (в Docker-сети имя "nginx"
+#    может не совпадать с CN в сертификате)
+# 4. verify_mode=CERT_REQUIRED — строгая проверка: соединение разорвётся,
+#    если серверный сертификат не подписан доверенным CA
 def get_mtls_ssl_context() -> ssl.SSLContext:
     ctx = ssl.create_default_context(cafile=CERT_CA)
     ctx.load_cert_chain(certfile=CERT_CLIENT_CRT, keyfile=CERT_CLIENT_KEY)
@@ -88,6 +164,10 @@ def get_mtls_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
+# Создание асинхронного HTTP-клиента с mTLS-контекстом для запросов к nginx.
+# Таймаут 120с — лабораторные запросы могут быть длительными (несколько БД).
+# Если mTLS-контекст не удалось создать (нет сертификатов), fallback на verify=False
+# (только для разработки! в продакшене сертификаты обязательны)
 def get_httpx_client() -> httpx.AsyncClient:
     try:
         ssl_ctx = get_mtls_ssl_context()
@@ -97,6 +177,14 @@ def get_httpx_client() -> httpx.AsyncClient:
         return httpx.AsyncClient(verify=False, timeout=httpx.Timeout(120.0))
 
 
+# Эндпоинт выдачи JWT-токена по спецификации OAuth2 (RFC 6749).
+# Поддерживает два типа грантов (grant_type):
+# 1. "password" — для пользователей: проверяет логин/пароль из HARDCODED_USERS,
+#    выдаёт type=user токен с TTL=24ч. Пользователь затем передаёт его
+#    в Authorization: Bearer при каждом запросе к API.
+# 2. "client_credentials" — для сервисных клиентов: проверяет client_id/client_secret
+#    из SERVICE_CLIENTS, выдаёт type=service токен с TTL=1ч.
+#    Используется лабораториями для межсервисного взаимодействия.
 @app.post("/auth/token")
 async def auth_token(form: OAuth2PasswordRequestForm = Depends()):
     grant_type = form.grant_type
@@ -121,6 +209,9 @@ async def auth_token(form: OAuth2PasswordRequestForm = Depends()):
         raise HTTPException(status_code=400, detail=f"Unsupported grant_type: {grant_type}")
 
 
+# Альтернативный эндпоинт авторизации — принимает JSON {username, password}
+# вместо стандартной OAuth2-формы. Удобен для веб-интерфейса (fetch POST с JSON-body).
+# Выдаёт тот же type=user токен, что и /auth/token с grant_type=password.
 @app.post("/auth/login")
 async def auth_login_legacy(request: Request):
     body = await request.json()
@@ -132,6 +223,14 @@ async def auth_login_legacy(request: Request):
     return {"access_token": token, "token_type": "Bearer", "expires_in": 86400}
 
 
+# Основная функция проксирования запроса к лаборатории.
+# Полный поток:
+# 1. Создаёт сервисный JWT-токен (type=service, sub="gateway", TTL=1ч)
+# 2. Создаёт httpx-клиент с mTLS-контекстом (клиентский сертификат + проверка сервера)
+# 3. Отправляет HTTPS GET-запрос к nginx с параметрами и заголовком Authorization
+# 4. Nginx проверяет client.crt (mTLS), снимает SSL, проксирует HTTP-запрос в лаб-контейнер
+# 5. Лаб проверяет service JWT и выполняет запрос к своим БД
+# 6. Ответ возвращается по обратному пути: лаб → nginx → gateway → пользователь
 async def call_lab(path: str, params: dict) -> dict:
     service_token = create_service_token()
     client = get_httpx_client()
@@ -147,6 +246,12 @@ async def call_lab(path: str, params: dict) -> dict:
         await client.aclose()
 
 
+# Функция проксирования запросов к генератору данных.
+# В отличие от call_lab, здесь mTLS не нужен — генератор доступен
+# только внутри Docker-сети по обычному HTTP. Таймаут 300с — генерация
+# большого объёма данных может занимать несколько минут.
+# Поддерживает методы GET (статус, список групп), POST (генерация),
+# DELETE (очистка всех хранилищ).
 async def call_generator(method: str, path: str, **kwargs) -> dict:
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
         url = f"{GENERATOR_URL}{path}"
@@ -162,41 +267,71 @@ async def call_generator(method: str, path: str, **kwargs) -> dict:
         return resp.json()
 
 
+# ЛР1: 10 студентов с минимальным % посещения лекций, содержащих заданный термин, за период.
+# Цепочка БД: Elasticsearch (BM25-поиск термина → lecture_ids) →
+#   PostgreSQL (CTE MATERIALIZED: top-10 студентов с мин % посещения) →
+#   Redis (HGETALL student:{id} — кэш данных студентов, TTL=2ч)
 @app.get("/attendance/low")
 async def lab1_query(term: str, start_date: str, end_date: str, _=Depends(verify_token)):
     return await call_lab("/lab1/query", {"term": term, "start_date": start_date, "end_date": end_date})
 
 
+# ЛР2: Необходимый объём аудитории для проведения занятий по курсу заданного семестра/года
+# с требованиями к оборудованию. Состав: курс, лекции, количество слушателей, иерархия вуза.
+# Цепочка БД: PostgreSQL (фильтрация лекций + COUNT студентов) →
+#   Neo4j (обход графа: Lecture→Course, Schedule→Group — сужение множества групп) →
+#   Redis (HGETALL student:{id} — только для групп из Neo4j) →
+#   MongoDB (findOne: University→Institutes→Departments→Specialities — иерархия вуза)
 @app.get("/schedule/capacity")
 async def lab2_query(semester: int, year: int, equipment: str = "", _=Depends(verify_token)):
     return await call_lab("/lab2/query", {"semester": semester, "year": year, "equipment": equipment})
 
 
+# ЛР3: Отчёт по группе — объём прослушанных и запланированных часов лекций
+# со спец. тегами дисциплины кафедры. 1 лекция = 2 академических часа.
+# Цепочка БД: PostgreSQL (lookup group_id по group_name) →
+#   Elasticsearch (фильтрация по спец. тегам: terms query) →
+#   Neo4j (обход графа: Student→Group→Schedule→Lecture→Course) →
+#   PostgreSQL (batch attendance + lecture_hours + student details)
 @app.get("/hours/report")
 async def lab3_query(group_name: str, _=Depends(verify_token)):
     return await call_lab("/lab3/query", {"group_name": group_name})
 
 
+# Проксирование запроса к генератору: заполнение всех 5 БД тестовыми данными.
+# Внутренний HTTP-запрос к generator:8010 (mTLS не нужен, Docker-сеть).
+# Требует авторизации (verify_token) — только аутентифицированные пользователи
+# могут инициировать генерацию данных.
 @app.post("/generator/generate")
 async def generate_data(_=Depends(verify_token)):
     return await call_generator("POST", "/generate")
 
 
+# Проксирование запроса к генератору: очистка всех 5 хранилищ (PG, ES, Neo4j, Redis, MongoDB).
+# Требует авторизации — предотвращает случайную или несанкционированную очистку данных.
 @app.delete("/generator/clear")
 async def clear_data(_=Depends(verify_token)):
     return await call_generator("DELETE", "/clear")
 
 
+# Проксирование запроса к генератору: проверка текущего состояния хранилищ
+# (ready / empty / ошибка, количество студентов и курсов).
+# НЕ требует авторизации — статус доступен без логина (для индикации в UI).
 @app.get("/generator/status")
 async def generator_status():
     return await call_generator("GET", "/status")
 
 
+# Проксирование запроса к генератору: получение списка всех групп из PostgreSQL.
+# Требует авторизации — используется для выбора группы в интерфейсе ЛР3.
 @app.get("/groups")
 async def list_groups(_=Depends(verify_token)):
     return await call_generator("GET", "/groups")
 
 
+# Веб-интерфейс gateway: отдаёт HTML-страницу с формами авторизации, генерации данных
+# и выполнения лабораторных запросов. Не требует авторизации — это статическая страница,
+# авторизация происходит при фактических API-вызовах через JavaScript (fetch + Bearer token).
 @app.get("/", response_class=HTMLResponse)
 def ui_page():
     return HTML_TEMPLATE
@@ -351,6 +486,8 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
 .collapsible+.coll-body{display:none;padding:8px 0}
 .collapsible.open+.coll-body{display:block}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:false,theme:'base',themeVariables:{primaryColor:'#3b82f6',primaryTextColor:'#1e293b',primaryBorderColor:'#94a3b8',lineColor:'#64748b',secondaryColor:'#f1f5f9',tertiaryColor:'#e2e8f0'}});</script>
 </head>
 <body>
 <div class="container">
@@ -481,6 +618,7 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
             <div class="tab active" onclick="switchTab('lab1',this)">ЛР1: Посещаемость</div>
             <div class="tab" onclick="switchTab('lab2',this)">ЛР2: Вместимость</div>
             <div class="tab" onclick="switchTab('lab3',this)">ЛР3: Часы</div>
+            <div class="tab" onclick="switchTab('diagrams',this)">Схемы</div>
         </div>
 
         <!-- LAB 1 -->
@@ -507,7 +645,7 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
                 <span class="badge badge-redis">Redis</span>
             </div>
             <div class="row">
-                <label>Термин/фраза</label><input id="lab1-term" value="mikroprocessorov"/>
+                <label>Термин/фраза</label><input id="lab1-term" value="микропроцессоров"/>
                 <label>Начало</label><input id="lab1-start" value="2025-09-01" style="max-width:140px"/>
                 <label>Конец</label><input id="lab1-end" value="2026-01-31" style="max-width:140px"/>
                 <button class="btn-blue" onclick="runLab1()">Выполнить</button>
@@ -577,6 +715,25 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
                 <input id="lab3-group" value="Группа-001" style="max-width:200px"/>
                 <button class="btn-blue" onclick="runLab3()">Выполнить</button>
             </div>
+        </div>
+
+        <!-- DIAGRAMS -->
+        <div id="tab-diagrams" class="tab-content">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
+                Диаграммы архитектуры и распределения данных. Рендеринг через Mermaid.js.
+            </div>
+            <div class="collapsible open" onclick="this.classList.toggle('open')">C4 — Контекст (Уровень 1)</div>
+            <div class="coll-body" style="display:block"><div id="dia-c4ctx" style="background:#fff;padding:12px;border-radius:8px;overflow:auto"></div></div>
+            <div class="collapsible open" onclick="this.classList.toggle('open')">C4 — Контейнеры (Уровень 2)</div>
+            <div class="coll-body" style="display:block"><div id="dia-c4cont" style="background:#fff;padding:12px;border-radius:8px;overflow:auto"></div></div>
+            <div class="collapsible" onclick="this.classList.toggle('open')">C4 — Компоненты (Уровень 3)</div>
+            <div class="coll-body"><div id="dia-c4comp" style="background:#fff;padding:12px;border-radius:8px;overflow:auto"></div></div>
+            <div class="collapsible" onclick="this.classList.toggle('open')">DFD — Уровень 0</div>
+            <div class="coll-body"><div id="dia-dfd0" style="background:#fff;padding:12px;border-radius:8px;overflow:auto"></div></div>
+            <div class="collapsible" onclick="this.classList.toggle('open')">DFD — Уровень 1</div>
+            <div class="coll-body"><div id="dia-dfd1" style="background:#fff;padding:12px;border-radius:8px;overflow:auto"></div></div>
+            <div class="collapsible" onclick="this.classList.toggle('open')">ER-диаграмма PostgreSQL</div>
+            <div class="coll-body"><div id="dia-er" style="background:#fff;padding:12px;border-radius:8px;overflow:auto"></div></div>
         </div>
 
         <div class="loading-bar" id="query-loading"><div class="fill"></div></div>
@@ -878,6 +1035,290 @@ function switchTab(tab,el){
     document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
     el.classList.add('active');
     document.getElementById('tab-'+tab).classList.add('active');
+    if(tab==='diagrams'){renderDiagrams()}
+}
+
+const DIAGRAMS={
+
+c4ctx:`graph LR
+    U(["Пользователь"]) -->|"HTTPS + JWT"| S["Система полиглотных отчётов"]
+    S -->|"JSON-отчёт"| U`,
+
+c4cont:`graph TB
+    U(["Пользователь"])
+    subgraph SYS["Система полиглотных отчётов"]
+        GW["API Gateway<br/>FastAPI :8000<br/>OAuth2 + mTLS"]
+        NX["Nginx :443<br/>mTLS verify + proxy"]
+        L1["Lab1 :8001<br/>ES-PG-Redis"]
+        L2["Lab2 :8002<br/>PG-Neo4j-Redis-Mongo"]
+        L3["Lab3 :8003<br/>ES-Neo4j-PG"]
+        GEN["Генератор :8010<br/>Заполняет 5 БД"]
+        CERT["Генератор сертификатов<br/>Alpine"]
+        PG[("PostgreSQL :5432")]
+        RD[("Redis :6379")]
+        MG[("MongoDB :27017")]
+        N4[("Neo4j :7687")]
+        ES[("Elasticsearch :9200")]
+    end
+    U -->|"HTTPS JWT"| GW
+    GW -->|"HTTPS client cert"| NX
+    NX -->|"/lab1/"| L1
+    NX -->|"/lab2/"| L2
+    NX -->|"/lab3/"| L3
+    GEN -->|"SQL"| PG
+    GEN -->|"Redis cmd"| RD
+    GEN -->|"Mongo Driver"| MG
+    GEN -->|"Cypher"| N4
+    GEN -->|"Bulk API"| ES
+    L1 -->|"BM25 поиск"| ES
+    L1 -->|"CTE top-10"| PG
+    L1 -->|"HGETALL"| RD
+    L2 -->|"Лекции+группы"| PG
+    L2 -->|"Граф связей"| N4
+    L2 -->|"Студенты"| RD
+    L2 -->|"Иерархия вуза"| MG
+    L3 -->|"Фильтр тегов"| ES
+    L3 -->|"Обход графа"| N4
+    L3 -->|"Посещаемость+часы"| PG`,
+
+c4comp:`graph TB
+    subgraph GW["API Gateway"]
+        AUTH["OAuth2 Auth Module<br/>JWT HS256"]
+        MTLS["mTLS Client<br/>ssl + httpx"]
+        PROXY["Request Proxy<br/>FastAPI routes"]
+        GPROXY["Generator Proxy<br/>httpx"]
+        WUI["Web UI<br/>HTML/JS"]
+    end
+    subgraph NX["Nginx"]
+        SSL["SSL Termination<br/>verify_client on"]
+        ROUTE["Route Mapper<br/>/lab1 /lab2 /lab3"]
+    end
+    subgraph LB1["Lab1"]
+        L1A["Token Verifier"]
+        L1ES["ES Search<br/>BM25"]
+        L1PG["PG CTE Query<br/>top-10"]
+        L1R["Redis Cache<br/>HGETALL"]
+    end
+    subgraph LB2["Lab2"]
+        L2A["Token Verifier"]
+        L2PG["PG Batch Query"]
+        L2N["Neo4j Traversal"]
+        L2R["Redis Pipeline"]
+        L2M["MongoDB Hierarchy"]
+    end
+    subgraph LB3["Lab3"]
+        L3A["Token Verifier"]
+        L3ES["ES Filter"]
+        L3N["Neo4j Traversal"]
+        L3PG["PG Attendance"]
+    end
+    subgraph GNC["Генератор"]
+        GPG["PG Writer<br/>12 таблиц"]
+        GES["ES Indexer"]
+        GNN["Neo4j Builder"]
+        GRR["Redis Writer"]
+        GMM["MongoDB Builder"]
+    end
+    U(["Пользователь"])
+    U -->|"POST /auth/token"| AUTH
+    U -->|"POST /generator/generate"| GPROXY
+    AUTH --> MTLS
+    MTLS -->|"HTTPS + cert"| SSL
+    SSL --> ROUTE
+    ROUTE --> L1A
+    ROUTE --> L2A
+    ROUTE --> L3A
+    L1A --> L1ES --> L1PG --> L1R
+    L2A --> L2PG --> L2N --> L2R --> L2M
+    L3A --> L3ES --> L3N --> L3PG
+    GPG --> GES
+    GPG --> GNN
+    GPG --> GRR
+    GPG --> GMM`,
+
+dfd0:`graph LR
+    U["Пользователь"] -->|"JWT-токен, параметры отчёта"| S["Полиглотная система управления учебным процессом"]
+    S -->|"JSON-отчёт"| U`,
+
+dfd1:`graph TB
+    U["Пользователь"]
+    A["1.0 Аутентификация OAuth2 JWT"]
+    P["2.0 Проверка mTLS и проксирование nginx"]
+    R1["3.1 ЛР1: Посещаемость по термину<br/>ES-PG-Redis"]
+    R2["3.2 ЛР2: Нагрузка аудиторий<br/>PG-Neo4j-Redis-Mongo"]
+    R3["3.3 ЛР3: Часы спец. дисциплин<br/>ES-Neo4j-PG"]
+    PG[("PostgreSQL")]
+    RD[("Redis")]
+    MG[("MongoDB")]
+    N4[("Neo4j")]
+    ES[("Elasticsearch")]
+    U -->|"логин/пароль"| A
+    A -->|"service JWT + cert"| P
+    P -->|"term, dates"| R1
+    P -->|"semester, year, equip"| R2
+    P -->|"group_name"| R3
+    R1 -->|"полнотекстовый поиск"| ES
+    ES -->|"lecture_ids"| R1
+    R1 -->|"CTE top-10"| PG
+    PG -->|"student rows"| R1
+    R1 -->|"HGETALL"| RD
+    RD -->|"student cache"| R1
+    R2 -->|"lectures+groups"| PG
+    PG -->|"course data"| R2
+    R2 -->|"graph traversal"| N4
+    N4 -->|"group links"| R2
+    R2 -->|"HGETALL"| RD
+    RD -->|"student details"| R2
+    R2 -->|"findOne"| MG
+    MG -->|"hierarchy"| R2
+    R3 -->|"filter tags"| ES
+    ES -->|"lecture_ids"| R3
+    R3 -->|"graph traversal"| N4
+    N4 -->|"student/schedule"| R3
+    R3 -->|"attendance+hours"| PG
+    PG -->|"attendance stats"| R3
+    R1 -->|"JSON"| P
+    R2 -->|"JSON"| P
+    R3 -->|"JSON"| P
+    P -->|"JSON"| A
+    A -->|"JSON-отчёт"| U`,
+
+er:`erDiagram
+    University ||--o{ Institute : "1:N"
+    Institute ||--o{ Department : "1:N"
+    Department ||--o{ DeptSpecialty : "M:N"
+    Speciality ||--o{ DeptSpecialty : "M:N"
+    Speciality ||--o{ LectureCourse : "1:N"
+    LectureCourse ||--o{ Lecture : "1:N"
+    Lecture ||--o{ LectureMaterial : "1:N"
+    Speciality ||--o{ StudentGroup : "1:N"
+    StudentGroup ||--o{ Student : "1:N"
+    Lecture ||--o{ Schedule : "1:N"
+    StudentGroup ||--o{ Schedule : "1:N"
+    Schedule ||--o{ Attendance : "1:N"
+    Student ||--o{ Attendance : "1:N"
+    University {
+        uuid id PK
+        varchar name UK
+        varchar short_name
+        text address
+        int founded_year
+    }
+    Institute {
+        uuid id PK
+        uuid university_id FK
+        varchar name
+        varchar short_name
+        varchar dean
+    }
+    Department {
+        uuid id PK
+        uuid institute_id FK
+        varchar name
+        varchar short_name
+        varchar head
+    }
+    Speciality {
+        uuid id PK
+        varchar name
+        varchar code
+        varchar degree_level
+        int duration_years
+    }
+    DeptSpecialty {
+        uuid id PK
+        uuid department_id FK
+        uuid speciality_id FK
+        boolean is_primary
+    }
+    LectureCourse {
+        uuid id PK
+        uuid speciality_id FK
+        varchar name
+        text description
+        int semester
+        int total_hours
+        int lecture_hours
+        int practice_hours
+        int lab_hours
+    }
+    Lecture {
+        uuid id PK
+        uuid course_id FK
+        varchar title
+        text annotation
+        varchar lecture_type
+        int order_number
+        int duration_minutes
+        varchar equipment_req
+        text tags
+    }
+    LectureMaterial {
+        uuid id PK
+        uuid lecture_id FK
+        varchar content_type
+        varchar title
+        text content_text
+        varchar file_url
+        json metadata
+    }
+    StudentGroup {
+        uuid id PK
+        uuid speciality_id FK
+        varchar name
+        int enrollment_year
+        varchar curator
+    }
+    Student {
+        uuid id PK
+        uuid group_id FK
+        varchar first_name
+        varchar last_name
+        varchar patronymic
+        varchar email
+        varchar student_card_number
+        date enrollment_date
+        varchar status
+    }
+    Schedule {
+        uuid id PK
+        uuid lecture_id FK
+        uuid group_id FK
+        date scheduled_date
+        date week_start_date
+        time start_time
+        time end_time
+        varchar classroom
+        varchar teacher_name
+        varchar status
+    }
+    Attendance {
+        uuid id PK
+        uuid schedule_id FK
+        uuid student_id FK
+        date week_start_date
+        timestamp marked_at
+    }`
+};
+
+let diagramsRendered=false;
+async function renderDiagrams(){
+    if(diagramsRendered)return;
+    try{
+        await mermaid.initialize({startOnLoad:false,theme:'base',themeVariables:{primaryColor:'#3b82f6',primaryTextColor:'#1e293b',primaryBorderColor:'#94a3b8',lineColor:'#64748b',secondaryColor:'#f1f5f9',tertiaryColor:'#e2e8f0'}});
+        const ids={c4ctx:'dia-c4ctx',c4cont:'dia-c4cont',c4comp:'dia-c4comp',dfd0:'dia-dfd0',dfd1:'dia-dfd1',er:'dia-er'};
+        for(const[key,divId]of Object.entries(ids)){
+            const el=document.getElementById(divId);
+            if(!el||!DIAGRAMS[key])continue;
+            try{
+                const{svg}=await mermaid.render('mermaid-'+key,DIAGRAMS[key]);
+                el.innerHTML=svg;
+            }catch(err){
+                el.innerHTML='<div style="color:#991b1b;font-size:12px;padding:8px">Ошибка рендеринга: '+err.message+'</div>';
+            }
+        }
+        diagramsRendered=true;
+    }catch(e){console.error('Mermaid init error:',e)}
 }
 
 checkStatus();

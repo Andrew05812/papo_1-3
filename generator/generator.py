@@ -1,3 +1,14 @@
+"""
+Модуль generator.py — основная логика генератора тестовых данных.
+
+Заполняет 5 хранилищ:
+  • PostgreSQL — 12 таблиц, включая партиционированную таблицу attendance
+  • Elasticsearch — индекс lectures с анализатором russian_custom
+  • Neo4j — 5 типов узлов (Student, StudentGroup, Schedule, Lecture, LectureCourse)
+           и 5 типов связей (MEMBER_OF, CONTAINS, PART_OF, BELONGS_TO, SHOULD_ATTEND)
+  • Redis     — кэш студентов в Hash-ключах student:{uuid} с TTL=2 ч (7200 с)
+  • MongoDB   — вложенный документ иерархии University→Institutes→Departments→Specialities
+"""
 import psycopg2
 from psycopg2.extras import execute_values
 from elasticsearch import Elasticsearch, helpers
@@ -16,18 +27,21 @@ import os
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Мужские имена для генерации тестовых данных студентов
 FIRST_NAMES_M = [
     "Александр", "Дмитрий", "Максим", "Сергей", "Андрей", "Алексей", "Артём",
     "Илья", "Кирилл", "Михаил", "Никита", "Матвей", "Роман", "Егор", "Арсений",
     "Иван", "Денис", "Евгений", "Даниил", "Тимофей", "Владислав", "Игорь",
     "Владимир", "Павел", "Руслан", "Марк", "Константин", "Тимур", "Олег", "Ярослав"
 ]
+# Женские имена
 FIRST_NAMES_F = [
     "Анастасия", "Мария", "Дарья", "Елена", "Анна", "Виктория", "Екатерина",
     "Алина", "Ирина", "Полина", "Ольга", "Татьяна", "Ксения", "Валерия", "Софья",
     "Юлия", "Марина", "Людмила", "Наталья", "Светлана", "Елизавета", "Вероника",
     "Александра", "Мирослава", "Варвара", "Диана", "Кристина", "Надежда", "Оксана", "Евгения"
 ]
+# Мужские фамилии
 LAST_NAMES_M = [
     "Иванов", "Смирнов", "Кузнецов", "Попов", "Васильев", "Петров", "Соколов",
     "Михайлов", "Новиков", "Фёдоров", "Морозов", "Волков", "Алексеев", "Лебедев",
@@ -35,6 +49,7 @@ LAST_NAMES_M = [
     "Андреев", "Макаров", "Никитов", "Захаров", "Зайцев", "Соловьёв", "Борисов",
     "Яковлев", "Григорьев"
 ]
+# Женские фамилии
 LAST_NAMES_F = [
     "Иванова", "Смирнова", "Кузнецова", "Попова", "Васильева", "Петрова", "Соколова",
     "Михайлова", "Новикова", "Фёдорова", "Морозова", "Волкова", "Алексеева", "Лебедева",
@@ -42,17 +57,20 @@ LAST_NAMES_F = [
     "Андреева", "Макарова", "Никитина", "Захарова", "Зайцева", "Соловьёва", "Борисова",
     "Яковлева", "Григорьева"
 ]
+# Мужские отчества
 PATRONYMICS_M = [
     "Александрович", "Дмитриевич", "Сергеевич", "Андреевич", "Алексеевич",
     "Михайлович", "Владимирович", "Игоревич", "Николаевич", "Евгеньевич",
     "Павлович", "Иванович", "Олегович", "Романович", "Кириллович"
 ]
+# Женские отчества
 PATRONYMICS_F = [
     "Александровна", "Дмитриевна", "Сергеевна", "Андреевна", "Алексеевна",
     "Михайловна", "Владимировна", "Игоревна", "Николаевна", "Евгеньевна",
     "Павловна", "Ивановна", "Олеговна", "Романовна", "Кирилловна"
 ]
 
+# 5 институтов университета (справочник)
 INSTITUTES = [
     {"name": "Институт информационных технологий", "short": "ИИТ", "dean": "Петров П.П."},
     {"name": "Институт радиотехнических систем", "short": "ИРТС", "dean": "Сидоров С.С."},
@@ -61,6 +79,7 @@ INSTITUTES = [
     {"name": "Институт перспективных технологий и индустрии", "short": "ИПТИ", "dean": "Морозов М.М."},
 ]
 
+# 15 кафедр (inst — индекс института в массиве INSTITUTES)
 DEPARTMENTS = [
     {"name": "Кафедра программной инженерии", "short": "КПИ", "head": "Белов Б.Б.", "inst": 0},
     {"name": "Кафедра информационных систем", "short": "КИС", "head": "Громов Г.Г.", "inst": 0},
@@ -79,6 +98,7 @@ DEPARTMENTS = [
     {"name": "Кафедра оптоэлектроники", "short": "КОЭ", "head": "Медведев М.М.", "inst": 4},
 ]
 
+# 30 специальностей с кодами, уровнем и длительностью обучения
 SPECIALITIES = [
     {"name": "Программная инженерия", "code": "09.03.04", "degree": "бакалавр", "duration": 4},
     {"name": "Информационные системы и технологии", "code": "09.03.02", "degree": "бакалавр", "duration": 4},
@@ -112,6 +132,7 @@ SPECIALITIES = [
     {"name": "Архитектура вычислительных систем", "code": "09.03.01", "degree": "бакалавр", "duration": 4},
 ]
 
+# Названия 60 учебных курсов
 COURSE_NAMES = [
     "Основы программирования", "Алгоритмы и структуры данных", "Базы данных",
     "Операционные системы", "Компьютерные сети", "Дискретная математика",
@@ -137,6 +158,7 @@ COURSE_NAMES = [
     "Правоведение", "Экономика", "Менеджмент",
 ]
 
+# Требования к оборудованию аудиторий
 EQUIPMENT_REQUIREMENTS = [
     "проектор", "компьютерный класс", "интерактивная доска", "лабораторное оборудование",
     "микроконтроллеры", "осциллограф", "мультимедийный проектор", "документ-камера",
@@ -145,8 +167,10 @@ EQUIPMENT_REQUIREMENTS = [
     "плата Arduino", "плата Raspberry Pi", "GPU-ускоритель", "кластер HPC",
 ]
 
+# Типы занятий: лекция, практика, лабораторная
 LECTURE_TYPES = ["лекция", "практика", "лабораторная"]
 
+# Описания курсов (для лекций с подробным содержанием)
 COURSE_DESCRIPTIONS = {
     "Основы программирования": "Изучение базовых принципов программирования на языках высокого уровня. Переменные, типы данных, операторы, циклы, функции. Введение в алгоритмику.",
     "Алгоритмы и структуры данных": "Классические алгоритмы сортировки, поиска, графовые алгоритмы. Структуры данных: списки, деревья, хеш-таблицы, графы.",
@@ -160,6 +184,7 @@ COURSE_DESCRIPTIONS = {
     "Криптография": "Симметричное и асимметричное шифрование, хеш-функции, цифровые подписи, протоколы TLS/SSL.",
 }
 
+# Шаблоны аннотаций лекций
 LECTURE_ANNOTATIONS = [
     "Введение в предметную область. Основные понятия и определения.",
     "Обзор литературы и источников. Методология исследования.",
@@ -175,6 +200,7 @@ LECTURE_ANNOTATIONS = [
     "Интеграция и развёртывание. DevOps-практики.",
 ]
 
+# Шаблоны текстов материалов лекций ({topic} — подставляется тема)
 LECTURE_CONTENT_TEMPLATES = [
     "Рассматриваются принципы работы {topic}. Основные характеристики и параметры. Примеры использования в реальных системах. Методы анализа и синтеза.",
     "Изучение методов {topic}. Теоретические основы и практическое применение. Алгоритмы реализации и оптимизации. Современные тенденции развития.",
@@ -183,11 +209,13 @@ LECTURE_CONTENT_TEMPLATES = [
     "Практикум по {topic}. Пошаговое выполнение заданий. Типичные ошибки и способы их устранения. Рекомендации по улучшению.",
 ]
 
+# Теги специальных дисциплин для фильтрации в ЛР3
 SPECIAL_TAGS = [
     "спецдисциплина", "кафедральная_дисциплина", "профильная_дисциплина",
     "дисциплина_кафедры", "специализация"
 ]
 
+# Номера аудиторий
 CLASSROOMS = [
     "А-101", "А-102", "А-201", "А-202", "А-301", "А-302",
     "Б-101", "Б-102", "Б-201", "Б-202", "Б-301", "Б-302",
@@ -196,6 +224,7 @@ CLASSROOMS = [
     "К-101", "К-102", "К-201", "К-202", "К-301", "К-302",
 ]
 
+# ФИО преподавателей
 TEACHER_NAMES = [
     "Проф. Иванов И.И.", "Доц. Петров П.П.", "Доц. Сидоров С.С.",
     "Проф. Козлов К.К.", "Доц. Волков В.В.", "Проф. Морозов М.М.",
@@ -207,6 +236,7 @@ TEACHER_NAMES = [
 ]
 
 
+# Подключение к PostgreSQL (реляционная БД — master-источник всех сущностей)
 def get_pg_conn():
     return psycopg2.connect(
         host=os.environ["POSTGRES_HOST"],
@@ -217,10 +247,12 @@ def get_pg_conn():
     )
 
 
+# Подключение к Elasticsearch (полнотекстовый поиск лекций)
 def get_es():
     return Elasticsearch(f"http://{os.environ['ES_HOST']}:{os.environ['ES_PORT']}")
 
 
+# Подключение к Neo4j (граф связей студент-группа-расписание-лекция)
 def get_neo4j_driver():
     return GraphDatabase.driver(
         os.environ["NEO4J_URI"],
@@ -228,10 +260,12 @@ def get_neo4j_driver():
     )
 
 
+# Подключение к Redis (кэш данных студентов, TTL=2ч)
 def get_redis():
     return redis.Redis(host=os.environ["REDIS_HOST"], port=int(os.environ.get("REDIS_PORT", 6379)), decode_responses=True)
 
 
+# Подключение к MongoDB (вложенный документ иерархии университета)
 def get_mongo():
     return MongoClient(
         host=os.environ["MONGO_HOST"],
@@ -242,6 +276,17 @@ def get_mongo():
 
 
 def generate_data(student_count=1000):
+    """
+    Главная функция генерации. Общий поток:
+    1. Очистка всех хранилищ (clear_all_stores)
+    2. Заполнение PostgreSQL (12 таблиц: university → institute → department →
+       speciality → department_specialities → lecture_course → lecture →
+       lecture_material → student_group → student → schedule → attendance)
+    3. Заполнение Elasticsearch (индекс lectures из PG)
+    4. Заполнение Neo4j (узлы + связи из PG)
+    5. Заполнение Redis (кэш студентов)
+    6. Заполнение MongoDB (иерархия университета)
+    """
     logger.info(f"Starting data generation: {student_count} students")
     clear_all_stores()
 
@@ -263,29 +308,34 @@ def generate_data(student_count=1000):
     cur = pg.cursor()
 
     try:
+        # --- Вставка университета (корневая запись, 1 строка) ---
         cur.execute(
             "INSERT INTO university (id, name, short_name, address, founded_year) VALUES (%s, %s, %s, %s, %s)",
             (university_id, "РТУ МИРЭА", "МИРЭА", "г. Москва, проспект Вернадского, 78", 1947)
         )
 
+        # --- Вставка институтов (5 строк, FK → university) ---
         for i, inst in enumerate(INSTITUTES):
             cur.execute(
                 "INSERT INTO institute (id, university_id, name, short_name, dean) VALUES (%s, %s, %s, %s, %s)",
                 (institute_ids[i], university_id, inst["name"], inst["short"], inst["dean"])
             )
 
+        # --- Вставка кафедр (15 строк, FK → institute) ---
         for i, dept in enumerate(DEPARTMENTS):
             cur.execute(
                 "INSERT INTO department (id, institute_id, name, short_name, head) VALUES (%s, %s, %s, %s, %s)",
                 (department_ids[i], institute_ids[dept["inst"]], dept["name"], dept["short"], dept["head"])
             )
 
+        # --- Вставка специальностей (30 строк, справочник) ---
         for i, spec in enumerate(SPECIALITIES):
             cur.execute(
                 "INSERT INTO speciality (id, name, code, degree_level, duration_years) VALUES (%s, %s, %s, %s, %s)",
                 (speciality_ids[i], spec["name"], spec["code"], spec["degree"], spec["duration"])
             )
 
+        # --- Связь кафедра↔специальность (M:N, ~30 строк) ---
         for i in range(len(DEPARTMENTS)):
             spec_indices = [i * 2, i * 2 + 1] if i * 2 + 1 < len(SPECIALITIES) else [i * 2]
             for si in spec_indices:
@@ -297,6 +347,7 @@ def generate_data(student_count=1000):
                         (ds_id, department_ids[i], speciality_ids[si], random.choice([True, False]))
                     )
 
+        # Привязка курсов к специальностям (3-5 курсов на специальность)
         spec_courses = {sid: [] for sid in speciality_ids}
         course_data = []
         course_idx = 0
@@ -316,6 +367,7 @@ def generate_data(student_count=1000):
                 course_data.append((cid, spec_id, course_name, desc, semester, total_hours, lecture_hours, practice_hours, lab_hours))
                 course_idx += 1
 
+        # --- Вставка учебных курсов lecture_course (batch execute_values, ~100 строк) ---
         execute_values(cur,
             "INSERT INTO lecture_course (id, speciality_id, name, description, semester, total_hours, lecture_hours, practice_hours, lab_hours) VALUES %s",
             course_data
@@ -324,6 +376,7 @@ def generate_data(student_count=1000):
         course_to_idx = {cid: ci for ci, cid in enumerate(course_ids)}
         num_lectures_per_course = 10
         lecture_data = []
+        # Генерация лекций (10 лекций на курс, 30% получают спец. тег, 40% — требование оборудования)
         for ci, cid in enumerate(course_ids):
             course_name = COURSE_NAMES[ci % len(COURSE_NAMES)]
             for li in range(num_lectures_per_course):
@@ -342,6 +395,7 @@ def generate_data(student_count=1000):
                 eq = random.choice(EQUIPMENT_REQUIREMENTS) if random.random() < 0.4 else None
                 lecture_data.append((lid, cid, title, annotation, ltype, order_number, dur, eq, tags))
 
+        # --- Вставка лекций lecture (batch по 500, ~1000 строк, FK → lecture_course) ---
         batch_size = 500
         for i in range(0, len(lecture_data), batch_size):
             execute_values(cur,
@@ -349,6 +403,8 @@ def generate_data(student_count=1000):
                 lecture_data[i:i+batch_size]
             )
 
+        # --- Вставка материалов к лекциям lecture_material (1-3 материала на лекцию) ---
+        # Генерация учебных материалов к лекциям (1-3 материала на лекцию)
         lecture_material_data = []
         for lid in lecture_ids:
             for mi in range(random.randint(1, 3)):
@@ -370,6 +426,7 @@ def generate_data(student_count=1000):
                 lecture_material_data[i:i+batch_size]
             )
 
+        # --- Вставка учебных групп student_group (~30-34 групп, FK → speciality) ---
         num_groups = max(30, student_count // 30)
         group_data = []
         for gi in range(num_groups):
@@ -386,6 +443,7 @@ def generate_data(student_count=1000):
             group_data
         )
 
+        # --- Вставка студентов student (batch по 500, FK → student_group) ---
         student_data = []
         for si in range(student_count):
             sid = str(uuid.uuid4())
@@ -412,6 +470,8 @@ def generate_data(student_count=1000):
                 student_data[i:i+batch_size]
             )
 
+        # --- Вставка расписания schedule (batch по 500, FK → lecture, student_group) ---
+        # Генерация расписания (семестр 1-4: осень 2025, семестр 5-8: весна 2026)
         schedule_data = []
         fall_start = date(2025, 9, 1)
         spring_start = date(2026, 2, 9)
@@ -471,6 +531,9 @@ def generate_data(student_count=1000):
                 schedule_data[i:i+batch_size]
             )
 
+        # --- Вставка посещаемости attendance (партиционированная таблица, batch по 500;
+        #     каждая запись: студент присутствовал на занятии, FK → schedule, student) ---
+        # Генерация посещаемости (случайная явка 50-95% студентов на каждое занятие)
         logger.info("Generating attendance records...")
         cur.execute("SELECT id, group_id, week_start_date FROM schedule")
         schedule_info = cur.fetchall()
@@ -546,11 +609,17 @@ def generate_data(student_count=1000):
 
 
 def populate_elasticsearch(course_ids, lecture_ids, lecture_material_ids):
+    """
+    Заполнение Elasticsearch: создание индекса lectures с кастомным анализатором
+    russian_custom (standard tokenizer + lowercase + russian_stop + russian_stemmer),
+    затем bulk-индексация документов, собранных из PG (lecture + lecture_course + lecture_material).
+    """
     es = get_es()
 
     if es.indices.exists(index="lectures"):
         es.indices.delete(index="lectures")
 
+    # Создание индекса с russian_custom анализатором (standard tokenizer + lowercase + russian_stop + russian_stemmer)
     es.indices.create(index="lectures", body={
         "settings": {
             "analysis": {
@@ -583,6 +652,7 @@ def populate_elasticsearch(course_ids, lecture_ids, lecture_material_ids):
         }
     })
 
+    # Выгрузка лекций + материалов из PostgreSQL для индексации
     pg = get_pg_conn()
     cur = pg.cursor()
     cur.execute("""
@@ -615,8 +685,10 @@ def populate_elasticsearch(course_ids, lecture_ids, lecture_material_ids):
             "content_text": row[8] or "",
             "semester": row[9]
         }
+        # Формирование документов для bulk-индексации
         actions.append({"_index": "lectures", "_id": str(row[0]), "_source": doc})
 
+    # Bulk-индексация (батчами по 500 документов)
     if actions:
         success, errors = helpers.bulk(es, actions, chunk_size=500, raise_on_error=False)
         if errors:
@@ -628,6 +700,17 @@ def populate_elasticsearch(course_ids, lecture_ids, lecture_material_ids):
 
 
 def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids):
+    """
+    Заполнение Neo4j: 5 типов узлов (Student, StudentGroup, Schedule, Lecture,
+    LectureCourse) и 5 типов связей:
+      • MEMBER_OF     — студент → группа
+      • CONTAINS      — группа → расписание
+      • PART_OF       — расписание → лекция
+      • BELONGS_TO    — лекция → курс
+      • SHOULD_ATTEND — студент → расписание
+    Данные читаются из PG, узлы и связи создаются пакетами через UNWIND
+    (по 500 записей) для производительности.
+    """
     driver = get_neo4j_driver()
 
     with driver.session() as session:
@@ -643,6 +726,7 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
     cur = pg.cursor()
 
     with driver.session() as session:
+        # Создание узлов Student (ФИО + номер студенческого билета), батч 500
         cur.execute("SELECT id, first_name, last_name, patronymic, student_card_number FROM student")
         students = cur.fetchall()
         batch = []
@@ -660,6 +744,7 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
                 batch=batch
             )
 
+        # Создание узлов StudentGroup (название группы)
         cur.execute("SELECT id, name FROM student_group")
         groups = cur.fetchall()
         batch = [{"id": str(g[0]), "name": g[1]} for g in groups]
@@ -668,6 +753,7 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
             batch=batch
         )
 
+        # Создание узлов Schedule (дата, время, аудитория), батч 500
         cur.execute("SELECT id, scheduled_date, start_time, classroom FROM schedule")
         schedules = cur.fetchall()
         batch = [{"id": str(s[0]), "date": str(s[1]), "time": str(s[2]), "classroom": s[3] or ""} for s in schedules]
@@ -677,6 +763,7 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
                 batch=batch[i:i+500]
             )
 
+        # Создание узлов Lecture (название, тип), батч 500
         cur.execute("SELECT id, title, lecture_type FROM lecture")
         lectures = cur.fetchall()
         batch = [{"id": str(l[0]), "title": l[1], "type": l[2] or ""} for l in lectures]
@@ -686,6 +773,7 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
                 batch=batch[i:i+500]
             )
 
+        # Создание узлов LectureCourse (название, семестр)
         cur.execute("SELECT id, name, semester FROM lecture_course")
         courses = cur.fetchall()
         batch = [{"id": str(c[0]), "name": c[1], "semester": c[2]} for c in courses]
@@ -694,6 +782,7 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
             batch=batch
         )
 
+        # Связь MEMBER_OF: Student → StudentGroup (студент состоит в группе)
         cur.execute("SELECT id, group_id FROM student")
         membership = cur.fetchall()
         batch = [{"sid": str(m[0]), "gid": str(m[1])} for m in membership]
@@ -703,6 +792,7 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
                 batch=batch[i:i+500]
             )
 
+        # Связь CONTAINS: StudentGroup → Schedule (группа имеет расписание)
         cur.execute("SELECT id, group_id FROM schedule")
         group_schedule = cur.fetchall()
         batch = [{"sid": str(g[0]), "gid": str(g[1])} for g in group_schedule]
@@ -712,6 +802,7 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
                 batch=batch[i:i+500]
             )
 
+        # Связь PART_OF: Schedule → Lecture (расписание относится к лекции)
         cur.execute("SELECT id, lecture_id FROM schedule")
         sched_lecture = cur.fetchall()
         batch = [{"sid": str(s[0]), "lid": str(s[1])} for s in sched_lecture]
@@ -721,6 +812,7 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
                 batch=batch[i:i+500]
             )
 
+        # Связь BELONGS_TO: Lecture → LectureCourse (лекция принадлежит курсу)
         cur.execute("SELECT id, course_id FROM lecture")
         lecture_course = cur.fetchall()
         batch = [{"lid": str(l[0]), "cid": str(l[1])} for l in lecture_course]
@@ -730,6 +822,7 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
                 batch=batch[i:i+500]
             )
 
+        # Связь SHOULD_ATTEND: Student → Schedule (студент должен присутствовать)
         cur.execute("""
             SELECT DISTINCT s.id, sch.id
             FROM student s
@@ -750,7 +843,14 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
 
 
 def populate_redis(student_ids, student_data):
+    """
+    Заполнение Redis: для каждого студента создаётся Hash-ключ student:{uuid}
+    с полями ФИО, email, номер зачётки, группа, статус, дата зачисления.
+    TTL каждого ключа — 7200 с (2 часа). Вставка через pipeline пакетами по 500
+    для снижения числа round-trip.
+    """
     r = get_redis()
+    # Очистка Redis перед заполнением
     r.flushdb()
 
     pipe = r.pipeline()
@@ -758,6 +858,7 @@ def populate_redis(student_ids, student_data):
         if i < len(student_data):
             d = student_data[i]
             key = f"student:{sid}"
+            # Pipeline HSET student:{uuid} с TTL=7200с (2 часа), батч 500 для экономии памяти
             pipe.hset(key, mapping={
                 "first_name": d[2],
                 "last_name": d[3],
@@ -778,14 +879,22 @@ def populate_redis(student_ids, student_data):
 
 
 def populate_mongodb(university_id, institute_ids, department_ids, speciality_ids, dept_spec_ids):
+    """
+    Заполнение MongoDB: создаётся один вложенный документ иерархии
+    University → Institutes[] → Departments[] → Specialities[].
+    Вместо 4 JOIN-запросов в реляционной схеме здесь достаточно
+    одного findOne() для получения всей иерархии целиком.
+    """
     client = get_mongo()
     db = client["university"]
     hierarchy = db["hierarchy"]
+    # Очистка коллекции перед заполнением
     hierarchy.drop()
 
     pg = get_pg_conn()
     cur = pg.cursor()
 
+    # Построение вложенного документа: University → Institutes → Departments → Specialities
     inst_docs = []
     for i, inst_id in enumerate(institute_ids):
         cur.execute("SELECT name, short_name, dean FROM institute WHERE id = %s", (inst_id,))
@@ -833,6 +942,7 @@ def populate_mongodb(university_id, institute_ids, department_ids, speciality_id
         "institutes": inst_docs
     }
 
+    # Вставка единого документа иерархии (один findOne вместо 4 JOIN в PostgreSQL)
     hierarchy.insert_one(university_doc)
 
     cur.close()
@@ -842,12 +952,21 @@ def populate_mongodb(university_id, institute_ids, department_ids, speciality_id
 
 
 def clear_all_stores():
+    """
+    Очистка всех 5 хранилищ. В PostgreSQL таблицы очищаются через
+    TRUNCATE CASCADE в порядке, учитывающем внешние ключи
+    (сначала зависимые, потом родительские). Для ускорения
+    временно отключается проверка FK: SET session_replication_role = replica.
+    Остальные хранилища очищаются собственными нативными методами.
+    """
     logger.info("Clearing all stores...")
 
     try:
         pg = get_pg_conn()
         cur = pg.cursor()
+        # Отключаем FK-проверки для ускорения TRUNCATE
         cur.execute("SET session_replication_role = replica")
+        # Таблицы в порядке зависимостей (сначала зависимые, потом главные)
         tables = [
             "attendance", "schedule", "student", "student_group",
             "lecture_material", "lecture", "lecture_course",
@@ -856,6 +975,7 @@ def clear_all_stores():
         ]
         for t in tables:
             cur.execute(f"TRUNCATE TABLE {t} CASCADE")
+        # Возвращаем FK-проверки
         cur.execute("SET session_replication_role = DEFAULT")
         pg.commit()
         cur.close()
@@ -865,6 +985,7 @@ def clear_all_stores():
         logger.error(f"Error clearing PostgreSQL: {e}")
 
     try:
+        # Удаление индекса lectures
         es = get_es()
         if es.indices.exists(index="lectures"):
             es.indices.delete(index="lectures")
@@ -873,6 +994,7 @@ def clear_all_stores():
         logger.error(f"Error clearing ES: {e}")
 
     try:
+        # Удаление всех узлов и связей
         driver = get_neo4j_driver()
         with driver.session() as session:
             session.run("MATCH (n) DETACH DELETE n")
@@ -882,6 +1004,7 @@ def clear_all_stores():
         logger.error(f"Error clearing Neo4j: {e}")
 
     try:
+        # Очистка всех ключей
         r = get_redis()
         r.flushdb()
         logger.info("Redis cleared")
@@ -889,6 +1012,7 @@ def clear_all_stores():
         logger.error(f"Error clearing Redis: {e}")
 
     try:
+        # Удаление коллекции hierarchy
         client = get_mongo()
         db = client["university"]
         db["hierarchy"].drop()
@@ -901,6 +1025,10 @@ def clear_all_stores():
 
 
 def get_status():
+    """
+    Проверка состояния данных: подсчёт студентов и курсов в PostgreSQL.
+    Если студент > 0 — статус «ready», иначе «empty».
+    """
     try:
         pg = get_pg_conn()
         cur = pg.cursor()
@@ -916,6 +1044,10 @@ def get_status():
 
 
 def list_groups():
+    """
+    Возвращает список групп (id, name, enrollment_year) из PostgreSQL.
+    Используется в Lab3 для заполнения выпадающего списка group_name.
+    """
     try:
         pg = get_pg_conn()
         cur = pg.cursor()
