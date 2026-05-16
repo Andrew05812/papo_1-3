@@ -25,12 +25,11 @@ rectangle "1.0\nАутентификация\nOAuth2 (JWT)" as Auth
 rectangle "2.0\nПроверка mTLS\nи проксирование\n(nginx)" as Proxy
 
 rectangle "3.1\nЛР1: Посещаемость\nпо термину\n(ES→Neo4j→PG→Redis)" as Report1
-rectangle "3.2\nЛР2: Нагрузка аудиторий\nпо семестру/году\n(PG→Neo4j→Redis→Mongo)" as Report2
-rectangle "3.3\nЛР3: Часы спец. дисциплин\nпо группе\n(ES→Neo4j→PG)" as Report3
+rectangle "3.2\nЛР2: Нагрузка аудиторий\nпо семестру/году\n(Neo4j)" as Report2
+rectangle "3.3\nЛР3: Часы спец. дисциплин\nпо группе\n(Neo4j→PG)" as Report3
 
 rectangle "PostgreSQL" as PG <<datastore>>
 rectangle "Redis" as Redis <<datastore>>
-rectangle "MongoDB" as Mongo <<datastore>>
 rectangle "Neo4j" as Neo4j <<datastore>>
 rectangle "Elasticsearch" as ES <<datastore>>
 
@@ -49,17 +48,9 @@ PG -up-> Report1 : attendance_pct
 Report1 -down-> Redis : HGETALL pipeline
 Redis -up-> Report1 : student cache
 
-Report2 -down-> PG : lectures + groups + counts
-PG -up-> Report2 : course/group data
 Report2 -down-> Neo4j : graph traversal
-Neo4j -up-> Report2 : group/course links
-Report2 -down-> Redis : HGETALL pipeline
-Redis -up-> Report2 : student details
-Report2 -down-> Mongo : hierarchy findOne
-Mongo -up-> Report2 : university→inst→dept
+Neo4j -up-> Report2 : group/course/room links
 
-Report3 -down-> ES : filter by special tags
-ES -up-> Report3 : lecture_ids
 Report3 -down-> Neo4j : Student→Group→Schedule→Lecture
 Neo4j -up-> Report3 : student/course/schedule
 Report3 -down-> PG : batch attendance + hours

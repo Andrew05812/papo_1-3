@@ -215,15 +215,9 @@ docker compose logs nginx --tail 5
 
 **Рассказывать так:**
 
-«Запрос идёт по четырём хранилищам: PostgreSQL → Neo4j → Redis → MongoDB.
+«Запрос идёт в одно хранилище: Neo4j.
 
-**Шаг 1 — PostgreSQL.** Фильтруем лекции по семестру, типу "лекция" и требованиям к компьютерному обеспечению. Находим расписание за указанный год. Считаем количество студентов в каждой группе.
-
-**Шаг 2 — Neo4j.** Обходим граф: от найденных лекций через BELONGS_TO к курсам, через PART_OF к расписанию, через CONTAINS к группам. Это сужает множество групп — мы запрашиваем Redis только для групп из расписания, а не для всех групп курса.
-
-**Шаг 3 — Redis.** Pipeline HGETALL для студентов из Neo4j-групп, batch=2000. При промахе — fallback к PostgreSQL с заполнением кэша.
-
-**Шаг 4 — MongoDB.** Один findOne — загружает вложенный документ University→Institutes→Departments→Specialities. Это вместо 4 JOIN в PostgreSQL — один запрос вместо четырёх.»
+**Шаг 1 — Neo4j.** Один комплексный Cypher-запрос: фильтрация лекций по семестру, типу "лекция" и компьютерному обеспечению (toLower CONTAINS — аналог ILIKE), обход графа Lecture→Course→Schedule→Group→Student, агрегация collect()/size() для подсчёта студентов, иерархия Course→Speciality→Department→Institute→University. Всё в одном запросе вместо 4 JOIN в PostgreSQL + Redis pipeline + MongoDB findOne.»
 
 ### ЛР3 — подробно
 
@@ -231,15 +225,11 @@ docker compose logs nginx --tail 5
 
 **Рассказывать так:**
 
-«Запрос идёт по трём хранилищам: Elasticsearch → Neo4j → PostgreSQL.
+«Запрос идёт по двум хранилищам: Neo4j → PostgreSQL.
 
-**Шаг 0 — PostgreSQL.** Пользователь вводит название группы (например "Группа-001"). Сначала lookup — находим UUID группы по имени.
+**Шаг 1 — Neo4j.** Обходим граф от стартовой группы по имени: Student-[MEMBER_OF]->Group-[CONTAINS]->Schedule-[PART_OF]->Lecture-[BELONGS_TO]->Course. Фильтруем лекции по тегам спец. дисциплин (ANY(tag IN l.tags WHERE tag IN special_tags)). Также получаем: lecture_hours из LectureCourse, student details из Student, иерархию через LectureCourse-[FOR_SPECIALITY]->Speciality-[PART_OF]->Department-[PART_OF]->Institute-[PART_OF]->University.
 
-**Шаг 1 — Elasticsearch.** Фильтруем лекции по тегам специальной дисциплины (спецдисциплина, кафедральная_дисциплина, профильная_дисциплина и т.д.) + lecture_type=лекция. Это terms query на keyword-поле — точная фильтрация, не полнотекстовый поиск.
-
-**Шаг 2 — Neo4j.** Обходим граф от одной стартовой группы: Student-[MEMBER_OF]->Group-[CONTAINS]->Schedule-[PART_OF]->Lecture-[BELONGS_TO]->Course, где Lecture.id входит в список из ES. Получаем: для каждого студента — какие курсы спец. дисциплин и какие занятия.
-
-**Шаг 3 — PostgreSQL.** Batch ANY(%s::uuid[]) для посещаемости, planned hours из lecture_course.ute_hours, student details. Считаем: attended_hours = attended_count × 2 (одна лекция = 2 ак.ч.). Hierarchy JOIN для институт/кафедра.»
+**Шаг 2 — PostgreSQL.** Единственный источник данных о фактическом посещении — is_present в partitioned таблице attendance. Связь ATTENDED в Neo4j не отличает пришёл/не пришёл (создана для всех записей). Batch ANY(%s::uuid[]) + FILTER (WHERE is_present = TRUE). Считаем: attended_hours = attended_count × 2 (одна лекция = 2 ак.ч.).»
 
 ### Что показать преподу
 
@@ -270,24 +260,32 @@ docker compose logs nginx --tail 5
 | schedule | id, lecture_id FK, group_id FK, scheduled_date, week_start_date, start_time, end_time, classroom, teacher_name, **status**='scheduled' | |
 | attendance | id, schedule_id(**no FK**), student_id(**no FK**), week_start_date(**partition key**), marked_at | PK(id, week_start_date), PARTITION BY RANGE, 4 партиции 2025Q3–2026Q2 |
 
-### Neo4j — 5 типов узлов, 6 типов связей
+### Neo4j — 9 типов узлов, 7 типов связей
 
 | Узел | Свойства |
 |------|----------|
 | Student | id, name, card_number, first_name, last_name, patronymic, email, phone, status, enrollment_date, group_id |
 | StudentGroup | id, name, enrollment_year, curator, speciality_id |
-| Schedule | id, date, time, classroom, week_start_date, teacher_name |
+| Schedule | id, date, start_time, end_time, classroom, week_start_date, teacher_name |
 | Lecture | id, title, type, computer_type, tags |
 | LectureCourse | id, name, semester, total_hours, lecture_hours, practice_hours, lab_hours, description, speciality_id |
+| University | id, name, short_name, address, founded_year |
+| Institute | id, name, short_name, dean |
+| Department | id, name, short_name, head, institute_id |
+| Speciality | id, name, code, degree_level, duration_years |
 
 | Связь | Направление | Описание |
 |-------|-------------|----------|
 | MEMBER_OF | Student → StudentGroup | Студент состоит в группе |
 | SHOULD_ATTEND | Student → Schedule | Студент должен присутствовать |
-| ATTENDED | Student → Schedule | Студент фактически присутствовал |
+| ATTENDED | Student → Schedule | Студент фактически присутствовал (без is_present!) |
 | CONTAINS | StudentGroup → Schedule | Группа имеет занятие |
 | PART_OF | Schedule → Lecture | Занятие = часть лекции |
+| PART_OF | Institute → University | Институт — часть университета |
+| PART_OF | Department → Institute | Кафедра — часть института |
+| PART_OF | Speciality → Department | Специальность относится к кафедре |
 | BELONGS_TO | Lecture → LectureCourse | Лекция относится к курсу |
+| FOR_SPECIALITY | LectureCourse → Speciality | Курс для специальности |
 
 ### Redis — только студенты
 
@@ -321,8 +319,8 @@ docker compose logs nginx --tail 5
 | generator | 8010 | Заполняет все 5 БД напрямую |
 | api-gateway | 8000 | OAuth2 + mTLS-клиент + проксирование + Web UI |
 | lab1 | 8001 | ЛР1: ES → Neo4j → PG → Redis |
-| lab2 | 8002 | ЛР2: PG → Neo4j → Redis → MongoDB |
-| lab3 | 8003 | ЛР3: ES → Neo4j → PG |
+| lab2 | 8002 | ЛР2: Neo4j |
+| lab3 | 8003 | ЛР3: Neo4j → PostgreSQL |
 
 ---
 

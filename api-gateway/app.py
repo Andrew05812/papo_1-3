@@ -15,8 +15,8 @@ API Gateway - клиентский контейнер
 
 Цепочки БД по лабораториям:
   ЛР1: Elasticsearch → Neo4j → PostgreSQL → Redis
-  ЛР2: PostgreSQL → Neo4j → Redis → MongoDB
-  ЛР3: Elasticsearch → Neo4j → PostgreSQL
+  ЛР2: Neo4j
+  ЛР3: Neo4j → PostgreSQL
 """
 # FastAPI — веб-фреймворк для создания REST API с автогенерацией OpenAPI-документации
 # HTTPException — выброс HTTP-ошибок (401, 400 и т.д.) с деталями
@@ -100,8 +100,8 @@ HARDCODED_USERS = {
 # свой client_id и client_secret. Полученный токен содержит type=service,
 # что позволяет лабам обращаться к другим лабам без участия пользователя.
 #   lab1-service — клиент ЛР1 (ES + Neo4j + PG + Redis)
-#   lab2-service — клиент ЛР2 (PG + Neo4j + Redis + MongoDB)
-#   lab3-service — клиент ЛР3 (ES + Neo4j + PG)
+#   lab2-service — клиент ЛР2 (Neo4j)
+#   lab3-service — клиент ЛР3 (Neo4j + PG)
 SERVICE_CLIENTS = {
     "lab1-service": "lab1-secret",
     "lab2-service": "lab2-secret",
@@ -515,8 +515,8 @@ pre.raw-json{background:var(--bg);padding:12px;border-radius:6px;font-size:11px;
                 <span class="arch-arrow">&#10145;</span>
                 <div style="display:flex;gap:8px">
                     <div class="arch-box l1">Lab1<div class="arch-sub">ES+Neo+PG+Redis</div></div>
-                    <div class="arch-box l2">Lab2<div class="arch-sub">PG+Neo+Redis+Mongo</div></div>
-                    <div class="arch-box l3">Lab3<div class="arch-sub">ES+Neo+PG</div></div>
+                    <div class="arch-box l2">Lab2<div class="arch-sub">Neo4j</div></div>
+                    <div class="arch-box l3">Lab3<div class="arch-sub">Neo+PG</div></div>
                 </div>
             </div>
             <div style="display:flex;justify-content:center;gap:24px;margin-top:6px">
@@ -902,7 +902,7 @@ function renderLab1(data){
 function renderLab2(data){
     let html='';
     html+='<div class="meta-row">';
-    html+='<div class="meta-item"><span class="meta-label">Путь:</span><span class="badge badge-mtls">mTLS</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-pg">PG</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-neo">Neo4j</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-redis">Redis</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-mongo">Mongo</span></div>';
+    html+='<div class="meta-item"><span class="meta-label">Путь:</span><span class="badge badge-mtls">mTLS</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-neo">Neo4j</span></div>';
     html+='<div class="meta-item"><span class="meta-label">Время:</span><span class="meta-val">'+data.execution_time_sec+'s</span></div>';
     html+='</div>';
     html+=renderSteps(data.steps);
@@ -947,7 +947,7 @@ function renderLab2(data){
 function renderLab3(data){
     let html='';
     html+='<div class="meta-row">';
-    html+='<div class="meta-item"><span class="meta-label">Путь:</span><span class="badge badge-mtls">mTLS</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-es">ES</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-neo">Neo4j</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-pg">PG</span></div>';
+    html+='<div class="meta-item"><span class="meta-label">Путь:</span><span class="badge badge-mtls">mTLS</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-neo">Neo4j</span><span style="color:var(--muted)">&#10145;</span><span class="badge badge-pg">PG</span></div>';
     html+='<div class="meta-item"><span class="meta-label">Время:</span><span class="meta-val">'+data.execution_time_sec+'s</span></div>';
     html+='<div class="meta-item"><span class="meta-label">1 лекция =</span><span class="meta-val">'+data.hours_per_lecture+' ак.ч.</span></div>';
     html+='</div>';
@@ -1014,7 +1014,7 @@ async function runLab2(){
     const yr=document.getElementById('lab2-year').value;
     const eq=document.getElementById('lab2-equipment').value;
     const bar=document.getElementById('query-loading');bar.classList.add('active');
-    document.getElementById('result-area').innerHTML='<div style="color:#60a5fa;padding:8px;font-size:12px">Gateway <span class="badge badge-mtls">mTLS</span> &#10145; nginx &#10145; <span class="badge badge-pg">PG</span> &#10145; <span class="badge badge-neo">Neo4j</span> &#10145; <span class="badge badge-redis">Redis</span> &#10145; <span class="badge badge-mongo">Mongo</span> ...</div>';
+    document.getElementById('result-area').innerHTML='<div style="color:#60a5fa;padding:8px;font-size:12px">Gateway <span class="badge badge-mtls">mTLS</span> &#10145; nginx &#10145; <span class="badge badge-neo">Neo4j</span> ...</div>';
     try{
         const r=await api('GET','/schedule/capacity?semester='+sem+'&year='+yr+'&equipment='+encodeURIComponent(eq));
         lastRawData=r;
@@ -1028,7 +1028,7 @@ async function runLab3(){
     const gname=document.getElementById('lab3-group').value;
     if(!gname){alert('Введите название группы');return}
     const bar=document.getElementById('query-loading');bar.classList.add('active');
-    document.getElementById('result-area').innerHTML='<div style="color:#60a5fa;padding:8px;font-size:12px">Gateway <span class="badge badge-mtls">mTLS</span> &#10145; nginx &#10145; <span class="badge badge-es">ES</span> &#10145; <span class="badge badge-neo">Neo4j</span> &#10145; <span class="badge badge-pg">PG</span> ...</div>';
+    document.getElementById('result-area').innerHTML='<div style="color:#60a5fa;padding:8px;font-size:12px">Gateway <span class="badge badge-mtls">mTLS</span> &#10145; nginx &#10145; <span class="badge badge-neo">Neo4j</span> &#10145; <span class="badge badge-pg">PG</span> ...</div>';
     try{
         const r=await api('GET','/hours/report?group_name='+encodeURIComponent(gname));
         lastRawData=r;
@@ -1058,8 +1058,8 @@ c4cont:`graph TB
             GW["API Gateway<br/>FastAPI :8000<br/>OAuth2 + mTLS"]
             NX["Nginx :443<br/>mTLS verify + proxy"]
             L1["Lab1 :8001<br/>ES-Neo4j-PG-Redis"]
-            L2["Lab2 :8002<br/>PG-Neo4j-Redis-Mongo"]
-            L3["Lab3 :8003<br/>ES-Neo4j-PG"]
+            L2["Lab2 :8002<br/>Neo4j"]
+            L3["Lab3 :8003<br/>Neo4j-PG"]
             GEN["Генератор :8010<br/>Заполняет 5 БД"]
             CERT["Генератор сертификатов<br/>Alpine"]
         end
@@ -1085,13 +1085,9 @@ c4cont:`graph TB
     L1 -->|"SHOULD_ATTEND"| N4
     L1 -->|"is_present attendance"| PG
     L1 -->|"HGETALL"| RD
-    L2 -->|"Лекции+группы"| PG
-    L2 -->|"Граф связей"| N4
-    L2 -->|"Студенты"| RD
-    L2 -->|"Иерархия вуза"| MG
-    L3 -->|"Фильтр тегов"| ES
-    L3 -->|"Обход графа"| N4
-    L3 -->|"Посещаемость+часы"| PG`,
+    L2 -->|"Cypher: обход+иерархия"| N4
+    L3 -->|"Обход графа+теги"| N4
+    L3 -->|"is_present attendance"| PG`,
 
 c4comp:`graph TB
     subgraph GW["API Gateway"]
@@ -1158,8 +1154,8 @@ dfd1:`graph TB
     A["1.0 Аутентификация OAuth2 JWT"]
     P["2.0 Проверка mTLS и проксирование nginx"]
     R1["3.1 ЛР1: Посещаемость по термину<br/>ES→Neo4j→PG→Redis"]
-    R2["3.2 ЛР2: Нагрузка аудиторий<br/>PG-Neo4j-Redis-Mongo"]
-    R3["3.3 ЛР3: Часы спец. дисциплин<br/>ES-Neo4j-PG"]
+    R2["3.2 ЛР2: Нагрузка аудиторий<br/>Neo4j"]
+    R3["3.3 ЛР3: Часы спец. дисциплин<br/>Neo4j→PG"]
     PG[("PostgreSQL")]
     RD[("Redis")]
     MG[("MongoDB")]
@@ -1178,19 +1174,11 @@ dfd1:`graph TB
     PG -->|"attendance_pct top-10"| R1
     R1 -->|"HGETALL"| RD
     RD -->|"student cache"| R1
-    R2 -->|"lectures+groups"| PG
-    PG -->|"course data"| R2
-    R2 -->|"graph traversal"| N4
-    N4 -->|"group links"| R2
-    R2 -->|"HGETALL"| RD
-    RD -->|"student details"| R2
-    R2 -->|"findOne"| MG
-    MG -->|"hierarchy"| R2
-    R3 -->|"filter tags"| ES
-    ES -->|"lecture_ids"| R3
-    R3 -->|"graph traversal"| N4
-    N4 -->|"student/schedule"| R3
-    R3 -->|"attendance+hours"| PG
+    R2 -->|"Cypher: обход+иерархия"| N4
+    N4 -->|"lectures+groups+hierarchy"| R2
+    R3 -->|"обход графа+теги"| N4
+    N4 -->|"student/schedule/hours"| R3
+    R3 -->|"is_present attendance"| PG
     PG -->|"attendance stats"| R3
     R1 -->|"JSON"| P
     R2 -->|"JSON"| P

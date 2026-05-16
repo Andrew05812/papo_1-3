@@ -4,8 +4,10 @@
 Заполняет 5 хранилищ:
   • PostgreSQL — 12 таблиц, включая партиционированную таблицу attendance
   • Elasticsearch — индекс lectures с анализатором russian_custom
-  • Neo4j — 5 типов узлов (Student, StudentGroup, Schedule, Lecture, LectureCourse)
-            и 6 типов связей (MEMBER_OF, CONTAINS, PART_OF, BELONGS_TO, SHOULD_ATTEND, ATTENDED)
+  • Neo4j — 9 типов узлов (Student, StudentGroup, Schedule, Lecture, LectureCourse,
+            University, Institute, Department, Speciality)
+            и 7 типов связей (MEMBER_OF, CONTAINS, PART_OF, BELONGS_TO,
+            SHOULD_ATTEND, ATTENDED, FOR_SPECIALITY)
   • Redis     — кэш студентов в Hash-ключах student:{uuid} с TTL=2 ч (7200 с)
   • MongoDB   — вложенный документ иерархии University→Institutes→Departments→Specialities
 """
@@ -597,7 +599,8 @@ def generate_data(student_count=1000):
     populate_elasticsearch(course_ids, lecture_ids, lecture_material_ids)
 
     logger.info("Populating Neo4j...")
-    populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids)
+    populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids,
+                   university_id, institute_ids, department_ids, speciality_ids)
 
     logger.info("Populating Redis...")
     populate_redis(student_ids, student_data)
@@ -715,16 +718,26 @@ def populate_elasticsearch(course_ids, lecture_ids, lecture_material_ids):
     pg.close()
 
 
-def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids):
+def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids,
+                   university_id, institute_ids, department_ids, speciality_ids):
     """
-    Заполнение Neo4j: 5 типов узлов (Student, StudentGroup, Schedule, Lecture,
-    LectureCourse) и 6 типов связей:
-      • MEMBER_OF     — студент → группа
-      • CONTAINS      — группа → расписание
-      • PART_OF       — расписание → лекция
-      • BELONGS_TO    — лекция → курс
-      • SHOULD_ATTEND — студент → расписание (должен присутствовать)
-      • ATTENDED      — студент → расписание (фактически присутствовал)
+    Заполнение Neo4j: 9 типов узлов и 7 типов связей.
+    
+    Узлы:
+      Student, StudentGroup, Schedule, Lecture, LectureCourse,
+      University, Institute, Department, Speciality
+    
+    Связи:
+      MEMBER_OF      — студент → группа
+      CONTAINS       — группа → расписание
+      PART_OF        — расписание → лекция / институт → университет / кафедра → институт / специальность → кафедра
+      BELONGS_TO     — лекция → курс
+      SHOULD_ATTEND  — студент → расписание (должен присутствовать)
+      ATTENDED       — студент → расписание (фактически присутствовал, но без is_present)
+      FOR_SPECIALITY — курс → специальность
+    
+    Иерархия: LectureCourse-[FOR_SPECIALITY]->Speciality-[PART_OF]->Department-[PART_OF]->Institute-[PART_OF]->University
+    
     Данные читаются из PG, узлы и связи создаются пакетами через UNWIND
     (по 500 записей) для производительности.
     """
@@ -733,17 +746,78 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
     with driver.session() as session:
         session.run("MATCH (n) DETACH DELETE n")
 
+        # Уникальные ограничения для всех 9 типов узлов (ускоряют MATCH в UNWIND)
         session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (s:Student) REQUIRE s.id IS UNIQUE")
         session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (g:StudentGroup) REQUIRE g.id IS UNIQUE")
         session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (s:Schedule) REQUIRE s.id IS UNIQUE")
         session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (l:Lecture) REQUIRE l.id IS UNIQUE")
         session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (c:LectureCourse) REQUIRE c.id IS UNIQUE")
+        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (u:University) REQUIRE u.id IS UNIQUE")
+        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (i:Institute) REQUIRE i.id IS UNIQUE")
+        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (d:Department) REQUIRE d.id IS UNIQUE")
+        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (sp:Speciality) REQUIRE sp.id IS UNIQUE")
 
     pg = get_pg_conn()
     cur = pg.cursor()
 
     with driver.session() as session:
-        # Создание узлов Student (все свойства для замены PG-запросов), батч 500
+        # ── Узлы иерархии университета ──
+        # University: корневой узел (1 запись)
+        cur.execute("SELECT id, name, short_name, address, founded_year FROM university WHERE id = %s", (university_id,))
+        u_row = cur.fetchone()
+        if u_row:
+            session.run(
+                "CREATE (u:University {id: $id, name: $name, short_name: $short_name, address: $address, founded_year: $founded_year})",
+                id=str(u_row[0]), name=u_row[1], short_name=u_row[2] or "", address=u_row[3] or "", founded_year=u_row[4] or 0
+            )
+
+        # Institute: 5 институтов, связь PART_OF → University
+        cur.execute("SELECT id, name, short_name, dean FROM institute")
+        inst_rows = cur.fetchall()
+        batch = [{"id": str(r[0]), "name": r[1], "short_name": r[2] or "", "dean": r[3] or ""} for r in inst_rows]
+        session.run(
+            "UNWIND $batch AS row CREATE (i:Institute {id: row.id, name: row.name, short_name: row.short_name, dean: row.dean})",
+            batch=batch
+        )
+        # Связь Institute-[PART_OF]->University
+        batch = [{"iid": str(r[0]), "uid": university_id} for r in inst_rows]
+        session.run(
+            "UNWIND $batch AS row MATCH (i:Institute {id: row.iid}), (u:University {id: row.uid}) CREATE (i)-[:PART_OF]->(u)",
+            batch=batch
+        )
+
+        # Department: 15 кафедр, связь PART_OF → Institute
+        cur.execute("SELECT id, name, short_name, head, institute_id FROM department")
+        dept_rows = cur.fetchall()
+        batch = [{"id": str(r[0]), "name": r[1], "short_name": r[2] or "", "head": r[3] or "", "institute_id": str(r[4])} for r in dept_rows]
+        session.run(
+            "UNWIND $batch AS row CREATE (d:Department {id: row.id, name: row.name, short_name: row.short_name, head: row.head, institute_id: row.institute_id})",
+            batch=batch
+        )
+        batch = [{"did": str(r[0]), "iid": str(r[4])} for r in dept_rows]
+        session.run(
+            "UNWIND $batch AS row MATCH (d:Department {id: row.did}), (i:Institute {id: row.iid}) CREATE (d)-[:PART_OF]->(i)",
+            batch=batch
+        )
+
+        # Speciality: 30 специальностей, связь PART_OF → Department (через department_specialities)
+        cur.execute("SELECT id, name, code, degree_level, duration_years FROM speciality")
+        spec_rows = cur.fetchall()
+        batch = [{"id": str(r[0]), "name": r[1], "code": r[2] or "", "degree_level": r[3] or "", "duration_years": r[4] or 0} for r in spec_rows]
+        session.run(
+            "UNWIND $batch AS row CREATE (sp:Speciality {id: row.id, name: row.name, code: row.code, degree_level: row.degree_level, duration_years: row.duration_years})",
+            batch=batch
+        )
+        # Связь Speciality-[PART_OF]->Department (по таблице department_specialities)
+        cur.execute("SELECT speciality_id, department_id FROM department_specialities")
+        ds_rows = cur.fetchall()
+        batch = [{"spid": str(r[0]), "did": str(r[1])} for r in ds_rows]
+        session.run(
+            "UNWIND $batch AS row MATCH (sp:Speciality {id: row.spid}), (d:Department {id: row.did}) CREATE (sp)-[:PART_OF]->(d)",
+            batch=batch
+        )
+
+        # ── Узлы Student (все свойства для замены PG-запросов), батч 500 ──
         cur.execute("SELECT id, first_name, last_name, patronymic, student_card_number, email, phone, status, enrollment_date, group_id FROM student")
         students = cur.fetchall()
         batch = []
@@ -774,13 +848,13 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
             batch=batch
         )
 
-        # Создание узлов Schedule (дата, время, аудитория, неделя, преподаватель), батч 500
-        cur.execute("SELECT id, scheduled_date, start_time, classroom, week_start_date, teacher_name FROM schedule")
+        # Создание узлов Schedule (дата, время начала/конца, аудитория, неделя, преподаватель), батч 500
+        cur.execute("SELECT id, scheduled_date, start_time, end_time, classroom, week_start_date, teacher_name FROM schedule")
         schedules = cur.fetchall()
-        batch = [{"id": str(s[0]), "date": str(s[1]), "time": str(s[2]), "classroom": s[3] or "", "week_start_date": str(s[4]), "teacher_name": s[5] or ""} for s in schedules]
+        batch = [{"id": str(s[0]), "date": str(s[1]), "start_time": str(s[2]), "end_time": str(s[3]), "classroom": s[4] or "", "week_start_date": str(s[5]), "teacher_name": s[6] or ""} for s in schedules]
         for i in range(0, len(batch), 500):
             session.run(
-                "UNWIND $batch AS row CREATE (s:Schedule {id: row.id, date: row.date, time: row.time, classroom: row.classroom, week_start_date: row.week_start_date, teacher_name: row.teacher_name})",
+                "UNWIND $batch AS row CREATE (s:Schedule {id: row.id, date: row.date, start_time: row.start_time, end_time: row.end_time, classroom: row.classroom, week_start_date: row.week_start_date, teacher_name: row.teacher_name})",
                 batch=batch[i:i+500]
             )
 
@@ -862,13 +936,24 @@ def populate_neo4j(course_ids, lecture_ids, group_ids, student_ids, schedule_ids
                 batch=batch[i:i+500]
             )
 
-        # Связь ATTENDED: Student → Schedule (фактическое посещение — из таблицы attendance)
+        # Связь ATTENDED: Student → Schedule (фактическое посещение — из таблицы attendance;
+        # связь создаётся для ВСЕХ записей, включая is_present=FALSE, т.к. у связи нет boolean-свойства)
         cur.execute("SELECT DISTINCT student_id, schedule_id FROM attendance")
         attended = cur.fetchall()
         batch = [{"sid": str(a[0]), "schid": str(a[1])} for a in attended]
         for i in range(0, len(batch), 500):
             session.run(
                 "UNWIND $batch AS row MATCH (s:Student {id: row.sid}), (sch:Schedule {id: row.schid}) CREATE (s)-[:ATTENDED]->(sch)",
+                batch=batch[i:i+500]
+            )
+
+        # Связь FOR_SPECIALITY: LectureCourse → Speciality (курс относится к специальности)
+        cur.execute("SELECT id, speciality_id FROM lecture_course")
+        course_spec = cur.fetchall()
+        batch = [{"cid": str(c[0]), "spid": str(c[1])} for c in course_spec]
+        for i in range(0, len(batch), 500):
+            session.run(
+                "UNWIND $batch AS row MATCH (c:LectureCourse {id: row.cid}), (sp:Speciality {id: row.spid}) CREATE (c)-[:FOR_SPECIALITY]->(sp)",
                 batch=batch[i:i+500]
             )
 
